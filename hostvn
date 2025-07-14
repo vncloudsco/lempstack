@@ -3593,12 +3593,13 @@ install_csf(){
     # Install iptables and required packages for modern OS
     if [[ "${OS_VER}" -ge 8 ]]; then
         # Install iptables and required packages
-        dnf -y install iptables-services iptables-utils net-tools || {
+        dnf -y install perl-libwww-perl iptables-services iptables-utils net-tools || {
             echo "Warning: Failed to install iptables packages"
         }
         
         # Enable iptables services (disable firewalld if running)
         systemctl stop firewalld 2>/dev/null || true
+        service lfd stop 2>/dev/null || true
         systemctl disable firewalld 2>/dev/null || true
         systemctl enable iptables 2>/dev/null || true
         systemctl start iptables 2>/dev/null || true
@@ -3610,7 +3611,7 @@ install_csf(){
         }
     else
         # CentOS 7 - iptables usually pre-installed
-        yum -y install iptables-services iptables-utils net-tools || {
+        yum -y install perl-libwww-perl iptables-services iptables-utils net-tools || {
             echo "Warning: Failed to install iptables packages"
         }
         
