@@ -135,7 +135,7 @@ Script sẽ kiểm tra:
 
 ```bash
 # Tải và chạy script cài đặt
-curl -sO https://https://dev.tinycp.me/install && chmod +x install && ./install
+curl -sO https://dev.tinycp.me/install && chmod +x install && ./install
 ```
 
 ### 3.2. Cài đặt thủ công
