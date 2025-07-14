@@ -3952,5 +3952,3 @@ printf "Password Admin tool          : %s\n" "${ADMIN_TOOL_PWD}"
 printf "Password phpMyAdmin          : %s\n" "${SQLPASS}"
 printf "=========================================================================\n"
 
-sleep 3
-shutdown -r now
