@@ -3619,6 +3619,11 @@ install_csf(){
         yum -y install $perl_packages || {
             echo "Warning: Some Perl packages failed to install"
         }
+        systemctl stop firewalld 2>/dev/null || true
+        service lfd stop 2>/dev/null || true
+        systemctl disable firewalld 2>/dev/null || true
+        systemctl enable iptables 2>/dev/null || true
+        systemctl start iptables 2>/dev/null || true
     fi
     
     # Download and install CSF
