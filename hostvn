@@ -308,12 +308,17 @@ set_email(){
     do
         read -r -p "Nhap vao email cua ban: " ADMIN_EMAIL
         echo
+        
+        # Clean input: remove HTML tags, whitespace, and newlines
+        ADMIN_EMAIL=$(echo "${ADMIN_EMAIL}" | sed 's/<[^>]*>//g' | tr -d '\n\r' | xargs)
+        
         if [[ "${ADMIN_EMAIL}" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]];
         then
             echo "Email cua ban la: ${ADMIN_EMAIL}."
             break
         else
             echo "Email ban nhap khong chinh xac vui long nhap lai."
+            echo "Email phai co dinh dang hop le (vd: user@domain.com)"
         fi
     done
 }
@@ -1173,10 +1178,20 @@ self_signed_ssl(){
     mkdir -p "${self_signed_dir}"
     openssl dhparam -out /etc/nginx/ssl/dhparams.pem 2048
     openssl genrsa -out "${self_signed_dir}/server.key" 4096
-    # Generate SSL certificate with validation
+    # Generate SSL certificate with enhanced validation
     local email_field=""
-    if [[ -n "${ADMIN_EMAIL}" && "${ADMIN_EMAIL}" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
-        email_field="/emailAddress=${ADMIN_EMAIL}"
+    local clean_email="${ADMIN_EMAIL}"
+    
+    # Clean any HTML/unwanted content from email
+    clean_email=$(echo "${clean_email}" | sed 's/<[^>]*>//g' | tr -d '\n\r' | xargs)
+    
+    # Validate email format
+    if [[ -n "${clean_email}" && "${clean_email}" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
+        email_field="/emailAddress=${clean_email}"
+        echo "Using email for SSL certificate: ${clean_email}"
+    else
+        echo "Warning: Invalid or missing email address for SSL certificate. Using default."
+        email_field=""
     fi
     
     openssl req -x509 -new -days 3650 -key "${self_signed_dir}/server.key" -out "${self_signed_dir}/server.crt" -subj "/C=VN/ST=Cau_Giay/L=Ha_Noi/O=${AUTHOR}/OU=IT/CN=${IPADDRESS}${email_field}"
@@ -3130,13 +3145,20 @@ Y
 EOF
     else
         echo "mysql_secure_installation not found, configuring MariaDB manually..."
-        # Configure MariaDB security manually
+        # Configure MariaDB security manually with version compatibility
         mysql -u root << EOSQL
-UPDATE mysql.user SET Password=PASSWORD('${SQLPASS}') WHERE User='root';
+-- Set root password (compatible with both old and new MariaDB versions)
+SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${SQLPASS}');
+-- Alternative for newer MariaDB versions
+UPDATE mysql.user SET authentication_string = PASSWORD('${SQLPASS}') WHERE User = 'root' AND Host = 'localhost';
+-- Remove anonymous users
 DELETE FROM mysql.user WHERE User='';
+-- Remove remote root access
 DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+-- Drop test database
 DROP DATABASE IF EXISTS test;
 DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+-- Reload privilege tables
 FLUSH PRIVILEGES;
 EOSQL
     fi
