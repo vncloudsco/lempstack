@@ -3590,14 +3590,31 @@ csf_gui(){
 install_csf(){
     echo "Installing CSF firewall for $OS_NAME $OS_VER..."
     
-    # Install required Perl packages
-    local perl_packages="perl-Perl4-CoreLibs perl-LWP-Protocol-https perl-libwww-perl perl-GDGraph perl-IO-Socket-SSL.noarch perl-Net-SSLeay perl-Net-LibIDN perl-IO-Socket-INET6 perl-Socket6 libpng-devel"
-    
+    # Install iptables and required packages for modern OS
     if [[ "${OS_VER}" -ge 8 ]]; then
+        # Install iptables and required packages
+        dnf -y install iptables-services iptables-utils net-tools || {
+            echo "Warning: Failed to install iptables packages"
+        }
+        
+        # Enable iptables services (disable firewalld if running)
+        systemctl stop firewalld 2>/dev/null || true
+        systemctl disable firewalld 2>/dev/null || true
+        systemctl enable iptables 2>/dev/null || true
+        systemctl start iptables 2>/dev/null || true
+        
+        # Install Perl packages
+        local perl_packages="perl-Perl4-CoreLibs perl-LWP-Protocol-https perl-libwww-perl perl-GDGraph perl-IO-Socket-SSL.noarch perl-Net-SSLeay perl-Net-LibIDN perl-IO-Socket-INET6 perl-Socket6 libpng-devel"
         dnf -y install $perl_packages || {
             echo "Warning: Some Perl packages failed to install"
         }
     else
+        # CentOS 7 - iptables usually pre-installed
+        yum -y install iptables-services iptables-utils net-tools || {
+            echo "Warning: Failed to install iptables packages"
+        }
+        
+        local perl_packages="perl-Perl4-CoreLibs perl-LWP-Protocol-https perl-libwww-perl perl-GDGraph perl-IO-Socket-SSL.noarch perl-Net-SSLeay perl-Net-LibIDN perl-IO-Socket-INET6 perl-Socket6 libpng-devel"
         yum -y install $perl_packages || {
             echo "Warning: Some Perl packages failed to install"
         }
@@ -3616,6 +3633,27 @@ install_csf(){
     }
     cd_dir "${DIR}"
     rm -rf csf*
+    
+    # Fix iptables path in CSF config for modern OS
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        # Check where iptables is located
+        local iptables_path=""
+        if [[ -x "/usr/sbin/iptables" ]]; then
+            iptables_path="/usr/sbin/iptables"
+        elif [[ -x "/sbin/iptables" ]]; then
+            iptables_path="/sbin/iptables"
+        elif command -v iptables &>/dev/null; then
+            iptables_path=$(command -v iptables)
+        fi
+        
+        if [[ -n "$iptables_path" ]]; then
+            echo "Found iptables at: $iptables_path"
+            sed -i "s|IPTABLES = \"/sbin/iptables\"|IPTABLES = \"$iptables_path\"|g" /etc/csf/csf.conf
+            sed -i "s|IP6TABLES = \"/sbin/ip6tables\"|IP6TABLES = \"${iptables_path/iptables/ip6tables}\"|g" /etc/csf/csf.conf
+        else
+            echo "Warning: iptables not found. CSF may not work correctly."
+        fi
+    fi
     
     # Configure CSF
     if [[ "${prompt_ssh}" =~ ^([yY])$ ]]; then
