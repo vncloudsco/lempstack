@@ -561,7 +561,7 @@ EONGINXREPO
     # Install yum-utils and nginx based on OS version
     if [[ $OS_VER -ge 8 ]]; then
         # For DNF-based systems
-        dnf -y install yum-utils || {
+        dnf -y install yum-utils openssh-server || {
             echo "Failed to install yum-utils"
             exit 1
         }
@@ -578,7 +578,7 @@ EONGINXREPO
         }
     else
         # For YUM-based systems (CentOS 7)
-        yum -y install yum-utils || {
+        yum -y install yum-utils openssh-server || {
             echo "Failed to install yum-utils"
             exit 1
         }
