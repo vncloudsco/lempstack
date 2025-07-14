@@ -641,66 +641,75 @@ EONGINXREPO
 # Enhanced MariaDB installation with better architecture and error handling
 install_mariadb(){
     echo "Installing MariaDB $MARIADB_VERSION for $OS_NAME $OS_VER..."
-    
-    # Determine architecture
     local arch_suffix
-    case $(uname -m) in
-        x86_64) arch_suffix="amd64" ;;
-        aarch64) arch_suffix="aarch64" ;;
-        *) arch_suffix="amd64" ;;
-    esac
-    
-    # Remove existing MariaDB repository
+    if [[ $OS_ARCH == "x86_64" ]]; then
+        arch_suffix="amd64"
+    else
+        arch_suffix="$OS_ARCH"
+    fi
+
+    # Remove old repo if exists
     rm -f /etc/yum.repos.d/mariadb.repo
-    
-    # Create MariaDB repository
-    cat >> "/etc/yum.repos.d/mariadb.repo" << EOMARIADBREPO
+
+    # Chọn repo phù hợp cho từng OS
+    local mariadb_repo_url=""
+    case $OS_VER in
+        7)
+            mariadb_repo_url="http://yum.mariadb.org/${MARIADB_VERSION}/centos7-amd64"
+            ;;
+        8)
+            mariadb_repo_url="http://yum.mariadb.org/${MARIADB_VERSION}/rhel8-amd64"
+            ;;
+        9)
+            mariadb_repo_url="http://yum.mariadb.org/${MARIADB_VERSION}/rhel9-amd64"
+            ;;
+        *)
+            echo "Unsupported OS version for MariaDB install."
+            exit 1
+            ;;
+    esac
+
+    cat > "/etc/yum.repos.d/mariadb.repo" << EOMARIADBREPO
 [mariadb]
 name = MariaDB
-baseurl = http://yum.mariadb.org/${MARIADB_VERSION}/centos${OS_VER}-${arch_suffix}
+baseurl = $mariadb_repo_url
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1
 EOMARIADBREPO
 
-    if [[ "${OS_VER}" -ge 8 ]]; then
-        # For CentOS 8+, AlmaLinux 8+, Rocky 8+
-        if [[ $OS_VER -eq 8 ]]; then
-            dnf makecache --refresh || {
-                echo "Failed to refresh package cache"
+    # Xử lý cache và xung đột AppStream
+    if [[ $OS_VER -ge 8 ]]; then
+        dnf clean all
+        dnf makecache --refresh || dnf makecache
+        dnf -y remove mariadb mariadb-server || true
+        dnf -y module disable mariadb || true
+        dnf -y install MariaDB-server MariaDB-client --disablerepo=AppStream || {
+            echo "Failed to install MariaDB from MariaDB.org repo. Thử fallback về repo mặc định..."
+            dnf -y install mariadb-server mariadb || {
+                echo "Failed to install MariaDB from all sources."
                 exit 1
             }
-        else
-            dnf makecache || {
-                echo "Failed to update package cache"
-                exit 1
-            }
-        fi
-        
-        # Install Galera for newer MariaDB versions
-        if [[ $MARIADB_VERSION == "10.5" || $MARIADB_VERSION == "10.6" || $MARIADB_VERSION == "10.11" ]]; then
-            dnf -y install galera-4 || {
-                echo "Warning: Galera installation failed"
-            }
-        fi
-        
-        # Install MariaDB with AppStream disabled to avoid conflicts
-        dnf install -y MariaDB-server MariaDB-client --disablerepo=AppStream || {
-            echo "Failed to install MariaDB"
-            exit 1
         }
     else
-        # For CentOS 7
-        yum makecache || {
-            echo "Failed to update package cache"
-            exit 1
-        }
+        yum clean all
+        yum makecache || true
+        yum -y remove mariadb mariadb-server || true
         yum -y install MariaDB-server MariaDB-client || {
-            echo "Failed to install MariaDB"
-            exit 1
+            echo "Failed to install MariaDB from MariaDB.org repo. Thử fallback về repo mặc định..."
+            yum -y install mariadb-server mariadb || {
+                echo "Failed to install MariaDB from all sources."
+                exit 1
+            }
         }
     fi
-    
-    echo "MariaDB $MARIADB_VERSION installed successfully"
+
+    # Enable & start service
+    systemctl enable mariadb || systemctl enable mariadb.service || true
+    systemctl start mariadb || systemctl start mariadb.service || {
+        echo "MariaDB service failed to start."
+        exit 1
+    }
+    echo "MariaDB $MARIADB_VERSION installed and started successfully."
 }
 
 # Enhanced PHP installation with better module management
@@ -2039,7 +2048,7 @@ location ^~ /phpmyadmin/vendor/ { deny all; access_log off; log_not_found off; }
 location ^~ /phpmyadmin/examples/ { deny all; access_log off; log_not_found off; }
 EOphpmyadmin_vhost
 
-cat >> "/etc/nginx/apps/opcache.conf" <<EOopcache_vhost
+cat >> "/etc/nginx/apps/opcache.conf" << EOopcache_vhost
 location ^~ /opcache {
     root ${DEFAULT_DIR_TOOL}/;
     index index.php index.html index.htm;
@@ -2062,7 +2071,7 @@ location ^~ /opcache {
 }
 EOopcache_vhost
 
-cat >> "/etc/nginx/apps/serverinfo.conf" <<EOserverinfo_vhost
+cat >> "/etc/nginx/apps/serverinfo.conf" << EOserverinfo_vhost
 location ^~ /serverinfo {
     root ${DEFAULT_DIR_TOOL}/;
     index index.php index.html index.htm;
@@ -2085,7 +2094,7 @@ location ^~ /serverinfo {
 }
 EOserverinfo_vhost
 
-cat >> "/etc/nginx/apps/memcached.conf" <<EOmemcached_vhost
+cat >> "/etc/nginx/apps/memcached.conf" << EOmemcached_vhost
 location ^~ /memcached {
     root ${DEFAULT_DIR_TOOL}/;
     index index.php index.html index.htm;
@@ -2111,7 +2120,7 @@ location ^~ /memcached {
 }
 EOmemcached_vhost
 
-cat >> "/etc/nginx/apps/redis.conf" <<EOredis_vhost
+cat >> "/etc/nginx/apps/redis.conf" << EOredis_vhost
 location ^~ /redis {
     root ${DEFAULT_DIR_TOOL}/;
     index index.php index.html index.htm;
@@ -2472,24 +2481,24 @@ security.limit_extensions = .php
 EOwww_2_conf
 
     if [[ ! -d "/opt/remi/${PHP_VERSION_2}/root/var/lib/php/session" ]]; then
-        mkdir -p /opt/remi/"${PHP_VERSION_2}"/root/var/lib/php/session
+        mkdir -p /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/session
     fi
     if [[ ! -d "/opt/remi/${PHP_VERSION_2}/root/var/lib/php/wsdlcache" ]]; then
-        mkdir -p /opt/remi/"${PHP_VERSION_2}"/root/var/lib/php/wsdlcache
+        mkdir -p /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/wsdlcache
     fi
     if [[ ! -d "/opt/remi/${PHP_VERSION_2}/root/var/log/php-fpm" ]]; then
-        mkdir -p /opt/remi/"${PHP_VERSION_2}"/root/var/log/php-fpm
+        mkdir -p /opt/remi/"${PHP_VERSION_2}/root/var/log/php-fpm
     fi
-    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}"/root/var/lib/php/session
-    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}"/root/var/lib/php/wsdlcache
-    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}"/root/var/log/php-fpm
-    chmod 711 /opt/remi/"${PHP_VERSION_2}"/root/var/lib/php/session
-    chmod 711 /opt/remi/"${PHP_VERSION_2}"/root/var/lib/php/wsdlcache
+    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/session
+    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/wsdlcache
+    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}/root/var/log/php-fpm
+    chmod 711 /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/session
+    chmod 711 /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/wsdlcache
 }
 
 # Custom PHP Ini
 hostvn_custom_ini(){
-    cat > "/etc/php.d/00-hostvn-custom.ini" <<EOhostvn_custom_ini
+    cat > "/etc/php.d/00-hostvn-custom.ini" << EOhostvn_custom_ini
 date.timezone = Asia/Ho_Chi_Minh
 max_execution_time = 300
 max_input_time = 300
@@ -2512,7 +2521,7 @@ EOhostvn_custom_ini
 }
 
 hostvn_custom_ini_2(){
-    cat > "${PHP2_INI_PATH}/00-hostvn-custom.ini" <<EOhostvn_custom_ini
+    cat > "${PHP2_INI_PATH}/00-hostvn-custom.ini" << EOhostvn_custom_ini
 date.timezone = Asia/Ho_Chi_Minh
 max_execution_time = 300
 max_input_time = 300
@@ -3036,7 +3045,7 @@ EOF
 }
 
 create_mysql_user(){
-    cat > "/tmp/mysql_query.temp" <<EOquery_temp
+    cat > "/tmp/mysql_query.temp" << EOquery_temp
     CREATE USER 'admin'@'localhost' IDENTIFIED BY '${SQLPASS}';
     GRANT ALL PRIVILEGES ON *.* TO 'admin'@'localhost' WITH GRANT OPTION;
     FLUSH PRIVILEGES;
@@ -3088,7 +3097,7 @@ sysctl_config(){
             touch /etc/sysctl.d/101-sysctl.conf
         fi
         echo "" > /etc/sysctl.d/101-sysctl.conf
-        cat >> "/etc/sysctl.d/101-sysctl.conf" <<EO101_sysctl
+        cat >> "/etc/sysctl.d/101-sysctl.conf" << EO101_sysctl
 kernel.printk=4 1 1 7
 fs.nr_open=12000000
 fs.file-max=9000000
@@ -3220,7 +3229,7 @@ config_phpmyadmin(){
 
     DECLARE="declare(strict_types=1);"
 
-    cat > "${DEFAULT_DIR_TOOL}/phpmyadmin/config.inc.php" <<EOCONFIGINC
+    cat > "${DEFAULT_DIR_TOOL}/phpmyadmin/config.inc.php" << EOCONFIGINC
 <?php
 ${DECLARE}
 \$cfg['blowfish_secret'] = '${BLOWFISH_SECRET}';
