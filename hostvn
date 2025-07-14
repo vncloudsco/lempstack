@@ -1173,7 +1173,13 @@ self_signed_ssl(){
     mkdir -p "${self_signed_dir}"
     openssl dhparam -out /etc/nginx/ssl/dhparams.pem 2048
     openssl genrsa -out "${self_signed_dir}/server.key" 4096
-    openssl req -x509 -new -days 3650 -key "${self_signed_dir}/server.key" -out "${self_signed_dir}/server.crt" -subj "/C=VN/ST=Cau_Giay/L=Ha_Noi/O=${AUTHOR}/OU=IT/CN=${IPADDRESS}/emailAddress=${ADMIN_EMAIL}"
+    # Generate SSL certificate with validation
+    local email_field=""
+    if [[ -n "${ADMIN_EMAIL}" && "${ADMIN_EMAIL}" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
+        email_field="/emailAddress=${ADMIN_EMAIL}"
+    fi
+    
+    openssl req -x509 -new -days 3650 -key "${self_signed_dir}/server.key" -out "${self_signed_dir}/server.crt" -subj "/C=VN/ST=Cau_Giay/L=Ha_Noi/O=${AUTHOR}/OU=IT/CN=${IPADDRESS}${email_field}"
 }
 
 create_nginx_conf(){
@@ -3107,7 +3113,11 @@ EOmy_conf
     chmod 600 /root/.my.cnf
     service mariadb start
 
-    /usr/bin/mysql_secure_installation << EOF
+    # Find mysql_secure_installation path
+    MYSQL_SECURE_INSTALLATION=$(which mysql_secure_installation 2>/dev/null || find /usr -name "mysql_secure_installation" 2>/dev/null | head -1)
+    
+    if [[ -n "$MYSQL_SECURE_INSTALLATION" && -x "$MYSQL_SECURE_INSTALLATION" ]]; then
+        $MYSQL_SECURE_INSTALLATION << EOF
 
 n
 Y
@@ -3118,6 +3128,18 @@ Y
 Y
 Y
 EOF
+    else
+        echo "mysql_secure_installation not found, configuring MariaDB manually..."
+        # Configure MariaDB security manually
+        mysql -u root << EOSQL
+UPDATE mysql.user SET Password=PASSWORD('${SQLPASS}') WHERE User='root';
+DELETE FROM mysql.user WHERE User='';
+DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+FLUSH PRIVILEGES;
+EOSQL
+    fi
 }
 
 create_mysql_user(){
