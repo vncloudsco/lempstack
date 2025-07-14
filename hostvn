@@ -2537,10 +2537,10 @@ EOwww_2_conf
         mkdir -p /opt/remi/"${PHP_VERSION_2}/root/var/log/php-fpm
     fi
     chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/session
-    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/wsdlcache
-    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}/root/var/log/php-fpm
-    chmod 711 /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/session
-    chmod 711 /opt/remi/"${PHP_VERSION_2}/root/var/lib/php/wsdlcache
+    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}"/root/var/lib/php/wsdlcache
+    chown -R nginx:nginx /opt/remi/"${PHP_VERSION_2}"/root/var/log/php-fpm
+    chmod 711 /opt/remi/"${PHP_VERSION_2}"/root/var/lib/php/session
+    chmod 711 /opt/remi/"${PHP_VERSION_2}"/root/var/lib/php/wsdlcache
 }
 
 # Custom PHP Ini
