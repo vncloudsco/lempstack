@@ -19,6 +19,11 @@
 RED='\033[0;31m'
 NC='\033[0m'
 
+# them ham log toan bo qua trinh cai dat script vào file 
+set -e
+LOG_FILE="/var/log/lemp_install.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 SCRIPTS_VERSION="1.1.0.0"
 
 # Enhanced OS Detection with improved compatibility
