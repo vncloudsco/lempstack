@@ -1,7 +1,8 @@
 #!/bin/bash
 
 ######################################################################
-#           Auto Install & Optimize LEMP Stack on CentOS 7, 8        #
+#           Auto Install & Optimize LEMP Stack                       #
+#           Support: CentOS 7/8/9, AlmaLinux 8/9, Rocky Linux 8/9   #
 #                                                                    #
 #                Author: Sanvv - HOSTVN Technical                    #
 #                  Website: https://hostvn.vn                        #
@@ -10,12 +11,72 @@
 #  Please do not copy under any circumstance for commercial reason!  #
 ######################################################################
 
+# Enhanced OS Detection with improved compatibility
+detect_os() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        OS_NAME=$ID
+        OS_VERSION=$VERSION_ID
+        OS_VERSION_MAJOR=$(echo $VERSION_ID | cut -d. -f1)
+        
+        # Additional detection for better compatibility
+        if [[ -f /etc/almalinux-release ]]; then
+            OS_NAME="almalinux"
+        elif [[ -f /etc/rocky-release ]]; then
+            OS_NAME="rocky"
+        elif [[ -f /etc/centos-release ]]; then
+            if grep -q "CentOS Stream" /etc/centos-release; then
+                OS_NAME="centos-stream"
+            else
+                OS_NAME="centos"
+            fi
+        fi
+    else
+        echo "Cannot detect OS version"
+        exit 1
+    fi
+
+    case $OS_NAME in
+        "centos"|"centos-stream")
+            OS_VER=$OS_VERSION_MAJOR
+            OS_TYPE="rhel"
+            ;;
+        "almalinux"|"rocky"|"rhel")
+            OS_VER=$OS_VERSION_MAJOR
+            OS_TYPE="rhel"
+            ;;
+        *)
+            echo "Unsupported OS: $OS_NAME. Supported: CentOS 7/8/9, AlmaLinux 8/9, Rocky Linux 8/9"
+            exit 1
+            ;;
+    esac
+
+    # Set powertools/crb repository name with better detection
+    if [[ $OS_VER -eq 8 ]]; then
+        case $OS_NAME in
+            "centos"|"centos-stream")
+                POWERTOOLS_REPO="PowerTools"
+                ;;
+            "almalinux"|"rocky"|"rhel")
+                POWERTOOLS_REPO="powertools"
+                ;;
+        esac
+    elif [[ $OS_VER -eq 9 ]]; then
+        POWERTOOLS_REPO="crb"
+    else
+        POWERTOOLS_REPO=""
+    fi
+
+    export OS_NAME OS_VERSION OS_VERSION_MAJOR OS_VER OS_TYPE POWERTOOLS_REPO
+}
+
+# Initialize OS detection
+detect_os
+
 # Set link
-SCRIPT_LINK="https://scripts.hostvn.net"
+SCRIPT_LINK="https://dev.tinycp.me"
 
 # VPS Info
-
-OS_VER=$(rpm -E %centos)
 RAM_TOTAL=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
 LOW_RAM='400000'
 
@@ -39,7 +100,7 @@ TINO="/opt/tinopanel"
 # Set Lang
 ROOT_ERR="Ban can chay script voi user root. Chay lenh \"sudo su\" de co quyen root!"
 CANCEL_INSTALL="Huy cai dat..."
-OS_WRONG="Script chi hoat dong tren \"CentOS 7\" va \"CentOS 8\"!"
+OS_WRONG="Script chi hoat dong tren \"CentOS 7/8/9\", \"AlmaLinux 8/9\", \"Rocky Linux 8/9\"!"
 RAM_NOT_ENOUGH="Canh bao: Dung luong RAM qua thap de cai Script. (it nhat 512MB)"
 OTHER_CP_EXISTS="May chu cua ban da cai dat Control Panel khac. Vui long rebuild de cai dat Script."
 HOSTVN_EXISTS="May chu cua ban da cai dat HOSTVN Script. Vui long rebuild neu muon cai dat lai."
@@ -52,7 +113,8 @@ welcome(){
     clear
     printf "========================================================\n"
     echo   "                   HOSTVN.VN Scripts                     "
-    echo   "     Auto Install & Optimize LEMP Stack on CentOS 7, 8    "
+    echo   "  Auto Install & Optimize LEMP Stack on RHEL-based OS    "
+    echo   "      Support: CentOS 7/8/9, AlmaLinux 8/9, Rocky 8/9   "
     printf " Neu can ho tro vui long lien he %s\n" "kythuat@hostvn.net"
     printf "========================================================\n"
     echo ""
@@ -121,26 +183,129 @@ remove_old_ervice(){
 }
 
 # Install requirement service
+# Enhanced repository installation with better error handling
 install_repo(){
-    if [[ "${OS_VER}" -eq 8 ]]; then
-        dnf -y install epel-release -y
-        dnf -y install https://rpms.remirepo.net/enterprise/remi-release-8.rpm -y
-        dnf -y install hostname libsepol boost-program-options libmemcached libmemcached-devel
-    elif [ "${OS_VER}" -eq 7 ]; then
-        yum -y install epel-release ntpdate libmemcached libmemcached-devel
-        yum install http://rpms.remirepo.net/enterprise/remi-release-7.rpm -y
-    else
-        printf "${RED}${OS_WRONG}${NC}\n"
-        sleep 2
-        exit
-    fi
+    echo "Setting up repositories for $OS_NAME $OS_VER..."
+    
+    case $OS_VER in
+        8|9)
+            # Install EPEL
+            if ! rpm -q epel-release &>/dev/null; then
+                dnf -y install epel-release || {
+                    echo "Failed to install EPEL repository"
+                    exit 1
+                }
+            fi
+            
+            # Install Remi repository
+            case $OS_VER in
+                8) 
+                    if ! rpm -q remi-release &>/dev/null; then
+                        dnf -y install "https://rpms.remirepo.net/enterprise/remi-release-8.rpm" || {
+                            echo "Failed to install Remi repository for version 8"
+                            exit 1
+                        }
+                    fi
+                    ;;
+                9) 
+                    if ! rpm -q remi-release &>/dev/null; then
+                        dnf -y install "https://rpms.remirepo.net/enterprise/remi-release-9.rpm" || {
+                            echo "Failed to install Remi repository for version 9"
+                            exit 1
+                        }
+                    fi
+                    ;;
+            esac
+            
+            # Install additional packages for modern distros
+            dnf -y install hostname libsepol boost-program-options libmemcached libmemcached-devel || {
+                echo "Warning: Some additional packages failed to install"
+            }
+            
+            # Install SELinux tools
+            if [[ $OS_VER -eq 8 ]]; then
+                dnf -y install policycoreutils-python-utils || {
+                    echo "Warning: SELinux tools installation failed"
+                }
+            elif [[ $OS_VER -eq 9 ]]; then
+                dnf -y install policycoreutils-python-utils python3-policycoreutils || {
+                    echo "Warning: SELinux tools installation failed"
+                }
+            fi
+            
+            # Enable PowerTools or CRB repository
+            if [[ -n "$POWERTOOLS_REPO" ]]; then
+                echo "Enabling $POWERTOOLS_REPO repository..."
+                dnf config-manager --set-enabled "$POWERTOOLS_REPO" || {
+                    echo "Warning: Could not enable $POWERTOOLS_REPO repository"
+                }
+            fi
+            ;;
+        7)
+            yum -y install epel-release ntpdate libmemcached libmemcached-devel || {
+                echo "Failed to install required packages for CentOS 7"
+                exit 1
+            }
+            yum install http://rpms.remirepo.net/enterprise/remi-release-7.rpm -y || {
+                echo "Failed to install Remi repository for CentOS 7"
+                exit 1
+            }
+            ;;
+        *)
+            printf "${RED}${OS_WRONG}${NC}\n"
+            sleep 2
+            exit
+            ;;
+    esac
+    
+    echo "Repository setup completed successfully"
 }
 
+# Enhanced package installation with better compatibility
 install_requirement(){
-    yum -y install gawk bc wget tar gcc gcc-c++ flex bison make bind bind-libs bind-utils dos2unix openssl openssl-devel perl quota libaio \
+    echo "Installing system requirements..."
+    
+    local base_packages="gawk bc wget tar gcc gcc-c++ flex bison make bind bind-libs bind-utils dos2unix openssl openssl-devel perl quota libaio \
           libcom_err-devel libcurl-devel gd jpegoptim zlib-devel zip unzip libcap-devel cronie bzip2 cyrus-sasl-devel perl-ExtUtils-Embed logrotate \
           autoconf automake libtool which patch mailx bzip2-devel lsof glibc-headers kernel-devel expat-devel nano htop git syslog-ng syslog-ng-libdbi \
-          psmisc net-tools systemd-devel libdb-devel perl-DBI pngquant libpng-devel xfsprogs rsyslog crontabs file kernel-headers
+          psmisc net-tools systemd-devel libdb-devel perl-DBI pngquant libpng-devel xfsprogs rsyslog crontabs file kernel-headers"
+    
+    if [[ $OS_VER -ge 8 ]]; then
+        # Use dnf for newer versions
+        dnf -y install $base_packages || {
+            echo "Failed to install some required packages"
+            echo "Attempting to install packages individually..."
+            
+            # Try installing packages individually for better error reporting
+            for package in $base_packages; do
+                dnf -y install "$package" || {
+                    echo "Warning: Failed to install $package"
+                }
+            done
+        }
+        
+        # Additional packages for newer OS versions
+        if [[ $OS_VER -eq 9 ]]; then
+            # Some packages might have different names in version 9
+            dnf -y install python3-pip python3-devel || {
+                echo "Warning: Failed to install Python development packages"
+            }
+        fi
+    else
+        # Use yum for CentOS 7
+        yum -y install $base_packages || {
+            echo "Failed to install some required packages"
+            echo "Attempting to install packages individually..."
+            
+            for package in $base_packages; do
+                yum -y install "$package" || {
+                    echo "Warning: Failed to install $package"
+                }
+            done
+        }
+    fi
+    
+    echo "System requirements installation completed"
 }
 
 create_swap(){

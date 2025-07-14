@@ -1,0 +1,449 @@
+#!/bin/bash
+
+######################################################################
+#           Auto Install & Optimize LEMP Stack                       #
+#           Support: CentOS 7/8/9, AlmaLinux 8/9, Rocky Linux 8/9   #
+#                                                                    #
+#                Author: Sanvv - HOSTVN Technical                    #
+#                  Website: https://hostvn.vn                        #
+#                                                                    #
+#              Please do not remove copyright. Thank!                #
+#  Please do not copy under any circumstance for commercial reason!  #
+######################################################################
+
+# Enhanced OS Detection Function
+detect_os() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        OS_NAME=$ID
+        OS_VERSION=$VERSION_ID
+        OS_VERSION_MAJOR=$(echo $VERSION_ID | cut -d. -f1)
+        
+        # Additional detection for variants
+        if [[ -f /etc/almalinux-release ]]; then
+            OS_NAME="almalinux"
+        elif [[ -f /etc/rocky-release ]]; then
+            OS_NAME="rocky"
+        elif [[ -f /etc/centos-release ]]; then
+            if grep -q "CentOS Stream" /etc/centos-release; then
+                OS_NAME="centos-stream"
+            else
+                OS_NAME="centos"
+            fi
+        fi
+    else
+        echo "Cannot detect OS version"
+        exit 1
+    fi
+
+    # Set OS variables with better compatibility
+    case $OS_NAME in
+        "centos")
+            OS_TYPE="rhel"
+            OS_VER=$OS_VERSION_MAJOR
+            ;;
+        "centos-stream")
+            OS_TYPE="rhel"
+            OS_VER=$OS_VERSION_MAJOR
+            OS_NAME="centos"
+            ;;
+        "almalinux")
+            OS_TYPE="rhel"
+            OS_VER=$OS_VERSION_MAJOR
+            ;;
+        "rocky")
+            OS_TYPE="rhel" 
+            OS_VER=$OS_VERSION_MAJOR
+            ;;
+        "rhel")
+            OS_TYPE="rhel"
+            OS_VER=$OS_VERSION_MAJOR
+            ;;
+        *)
+            echo "Unsupported OS: $OS_NAME"
+            echo "Supported: CentOS 7/8/9, AlmaLinux 8/9, Rocky Linux 8/9"
+            exit 1
+            ;;
+    esac
+
+    # Set powertools/crb repository name with better detection
+    if [[ $OS_VER -eq 8 ]]; then
+        case $OS_NAME in
+            "centos")
+                POWERTOOLS_REPO="PowerTools"
+                ;;
+            "almalinux"|"rocky"|"rhel")
+                POWERTOOLS_REPO="powertools"
+                ;;
+        esac
+    elif [[ $OS_VER -eq 9 ]]; then
+        POWERTOOLS_REPO="crb"
+    else
+        POWERTOOLS_REPO=""
+    fi
+
+    export OS_NAME OS_VERSION OS_VERSION_MAJOR OS_TYPE OS_VER POWERTOOLS_REPO
+}
+
+# Enhanced package manager functions with error handling
+install_packages() {
+    local packages="$@"
+    
+    if [[ $OS_VER -ge 8 ]]; then
+        dnf -y install $packages || {
+            echo "Failed to install packages: $packages"
+            return 1
+        }
+    else
+        yum -y install $packages || {
+            echo "Failed to install packages: $packages"
+            return 1
+        }
+    fi
+}
+
+enable_repo() {
+    local repo="$1"
+    
+    if [[ $OS_VER -ge 8 ]]; then
+        dnf config-manager --set-enabled $repo 2>/dev/null || {
+            echo "Warning: Could not enable repository: $repo"
+            return 1
+        }
+    else
+        yum-config-manager --enable $repo 2>/dev/null || {
+            echo "Warning: Could not enable repository: $repo"
+            return 1
+        }
+    fi
+}
+
+disable_repo() {
+    local repo="$1"
+    
+    if [[ $OS_VER -ge 8 ]]; then
+        dnf config-manager --set-disabled $repo 2>/dev/null || {
+            echo "Warning: Could not disable repository: $repo"
+            return 1
+        }
+    else
+        yum-config-manager --disable $repo 2>/dev/null || {
+            echo "Warning: Could not disable repository: $repo"
+            return 1
+        }
+    fi
+}
+
+# Enhanced PHP version filtering for newer distros (removing PHP 5.6, adding PHP 8.4)
+filter_php_versions() {
+    local php_list=("$@")
+    local filtered_list=()
+    
+    for version in "${php_list[@]}"; do
+        case $OS_VER in
+            7)
+                # CentOS 7 supports PHP 7.0 to 8.4 (removed PHP 5.6)
+                if [[ "$version" != "php5.6" && "$version" != "php56" ]]; then
+                    filtered_list+=("$version")
+                fi
+                ;;
+            8)
+                # CentOS 8+, AlmaLinux 8, Rocky 8 - remove very old PHP versions
+                if [[ "$version" != "php5.6" && "$version" != "php56" && "$version" != "php7.0" && "$version" != "php70" ]]; then
+                    filtered_list+=("$version")
+                fi
+                ;;
+            9)
+                # CentOS 9, AlmaLinux 9, Rocky 9 - only modern PHP versions
+                if [[ "$version" != "php5.6" && "$version" != "php56" && "$version" != "php7.0" && "$version" != "php70" && "$version" != "php7.1" && "$version" != "php71" && "$version" != "php7.2" && "$version" != "php72" ]]; then
+                    filtered_list+=("$version")
+                fi
+                ;;
+        esac
+    done
+    
+    echo "${filtered_list[@]}"
+}
+
+# Enhanced repository setup with better error handling
+setup_repositories() {
+    echo "Setting up repositories for $OS_NAME $OS_VER..."
+    
+    # Install EPEL
+    if ! rpm -q epel-release &>/dev/null; then
+        install_packages epel-release || {
+            echo "Failed to install EPEL repository"
+            return 1
+        }
+    fi
+    
+    # Install Remi repository
+    local remi_installed=false
+    if rpm -q remi-release &>/dev/null; then
+        remi_installed=true
+    fi
+    
+    if [[ "$remi_installed" == false ]]; then
+        case $OS_VER in
+            7)
+                install_packages "http://rpms.remirepo.net/enterprise/remi-release-7.rpm" || {
+                    echo "Failed to install Remi repository for CentOS 7"
+                    return 1
+                }
+                ;;
+            8)
+                install_packages "https://rpms.remirepo.net/enterprise/remi-release-8.rpm" || {
+                    echo "Failed to install Remi repository for version 8"
+                    return 1
+                }
+                ;;
+            9)
+                install_packages "https://rpms.remirepo.net/enterprise/remi-release-9.rpm" || {
+                    echo "Failed to install Remi repository for version 9"
+                    return 1
+                }
+                ;;
+        esac
+    fi
+    
+    # Enable PowerTools/CRB if needed
+    if [[ -n "$POWERTOOLS_REPO" ]]; then
+        echo "Enabling $POWERTOOLS_REPO repository..."
+        enable_repo "$POWERTOOLS_REPO" || {
+            echo "Warning: Could not enable $POWERTOOLS_REPO repository"
+        }
+    fi
+    
+    # Additional packages for newer OS versions
+    if [[ $OS_VER -ge 8 ]]; then
+        install_packages hostname libsepol boost-program-options libmemcached libmemcached-devel || {
+            echo "Warning: Some additional packages failed to install"
+        }
+        
+        # Install SELinux tools for newer versions
+        if [[ $OS_VER -eq 8 ]]; then
+            install_packages policycoreutils-python-utils || {
+                echo "Warning: SELinux tools installation failed"
+            }
+        elif [[ $OS_VER -eq 9 ]]; then
+            install_packages policycoreutils-python-utils python3-policycoreutils || {
+                echo "Warning: SELinux tools installation failed"
+            }
+        fi
+    else
+        install_packages ntpdate libmemcached libmemcached-devel || {
+            echo "Warning: Some packages failed to install"
+        }
+    fi
+}
+
+# Enhanced MariaDB installation with architecture detection
+install_mariadb_enhanced() {
+    local mariadb_version="${1:-10.5}"
+    
+    echo "Installing MariaDB $mariadb_version for $OS_NAME $OS_VER..."
+    
+    # Determine architecture
+    local arch=$(uname -m)
+    case $arch in
+        x86_64) arch_suffix="amd64" ;;
+        aarch64) arch_suffix="aarch64" ;;
+        *) arch_suffix="amd64" ;;
+    esac
+    
+    # Remove old MariaDB repository
+    rm -f /etc/yum.repos.d/mariadb.repo
+    
+    # Create MariaDB repository
+    cat > "/etc/yum.repos.d/mariadb.repo" << EOF
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/${mariadb_version}/centos${OS_VER}-${arch_suffix}
+gpgkey = https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck = 1
+EOF
+
+    if [[ $OS_VER -ge 8 ]]; then
+        # For CentOS 8+, AlmaLinux 8+, Rocky 8+
+        if [[ $OS_VER -eq 8 ]]; then
+            dnf makecache --refresh
+        else
+            dnf makecache
+        fi
+        
+        # Install Galera for newer MariaDB versions
+        if [[ $mariadb_version == "10.5" || $mariadb_version == "10.6" || $mariadb_version == "10.11" ]]; then
+            dnf -y install galera-4 || {
+                echo "Warning: Galera installation failed"
+            }
+        fi
+        
+        # Install MariaDB with AppStream disabled
+        dnf install -y MariaDB-server MariaDB-client --disablerepo=AppStream || {
+            echo "Failed to install MariaDB"
+            return 1
+        }
+    else
+        # For CentOS 7
+        yum makecache
+        yum -y install MariaDB-server MariaDB-client || {
+            echo "Failed to install MariaDB"
+            return 1
+        }
+    fi
+    
+    echo "MariaDB $mariadb_version installed successfully"
+}
+
+# Enhanced PHP installation with module management
+install_php_enhanced() {
+    local php_version="$1"
+    
+    echo "Installing PHP $php_version for $OS_NAME $OS_VER..."
+    
+    if [[ $OS_VER -ge 8 ]]; then
+        # Convert php version for module enable (e.g., php74 -> 7.4)
+        local php_version_dots=${php_version//php}
+        php_version_dots=$(echo "$php_version_dots" | fold -w1 | paste -sd'.')
+        
+        # Reset PHP modules first
+        dnf module reset php -y
+        dnf makecache
+        
+        # Enable specific PHP version
+        dnf module enable php:remi-"$php_version_dots" -y || {
+            echo "Failed to enable PHP module for version $php_version_dots"
+            return 1
+        }
+        
+        # Enable PowerTools/CRB
+        if [[ -n "$POWERTOOLS_REPO" ]]; then
+            enable_repo "$POWERTOOLS_REPO"
+        fi
+    else
+        # For CentOS 7
+        yum-config-manager --enable remi-"$php_version" || {
+            echo "Failed to enable PHP repository for $php_version"
+            return 1
+        }
+    fi
+    
+    # Install PHP packages
+    local php_packages="php php-fpm php-ldap php-zip php-embedded php-cli php-mysql php-common php-gd php-xml php-mbstring \
+        php-mcrypt php-pdo php-soap php-json php-simplexml php-process php-curl php-bcmath php-snmp php-pspell php-gmp \
+        php-intl php-imap php-enchant php-pear php-zlib php-xmlrpc php-devel \
+        php-tidy php-opcache php-cli php-pecl-zip php-dom php-ssh2 php-xmlreader php-date php-exif php-filter php-ftp \
+        php-hash php-iconv php-libxml php-pecl-imagick php-openssl php-pcre php-posix php-sockets php-spl \
+        php-tokenizer php-bz2 php-pgsql php-sqlite3 php-fileinfo"
+    
+    install_packages $php_packages || {
+        echo "Failed to install PHP packages"
+        return 1
+    }
+    
+    echo "PHP $php_version installed successfully"
+}
+
+# Enhanced memcached installation
+install_memcached_enhanced() {
+    echo "Installing Memcached for $OS_NAME $OS_VER..."
+    
+    install_packages memcached || {
+        echo "Failed to install memcached"
+        return 1
+    }
+    
+    if [[ -f "/etc/sysconfig/memcached" ]]; then
+        mv /etc/sysconfig/memcached /etc/sysconfig/memcached.bak
+        cat > "/etc/sysconfig/memcached" << EOF
+PORT="11211"
+USER="memcached"
+MAXCONN="${MAX_CLIENT:-1024}"
+CACHESIZE="${MAX_MEMORY:-64}mb"
+OPTIONS="-l 127.0.0.1 -U 0"
+EOF
+    fi
+    
+    # Set SELinux context
+    if command -v semanage &>/dev/null; then
+        semanage permissive -a memcached_t 2>/dev/null || true
+    fi
+    
+    echo "Memcached installed successfully"
+}
+
+# Enhanced ClamAV installation
+install_clamav_enhanced() {
+    echo "Installing ClamAV for $OS_NAME $OS_VER..."
+    
+    local packages="clamav-server clamav-update clamav-filesystem clamav clamav-scanner-systemd clamav-devel clamav-lib clamav-server-systemd"
+    
+    install_packages $packages || {
+        echo "Failed to install ClamAV packages"
+        return 1
+    }
+    
+    # Configure SELinux for ClamAV
+    if command -v setsebool &>/dev/null; then
+        setsebool -P antivirus_can_scan_system 1 2>/dev/null || true
+        setsebool -P clamd_use_jit 1 2>/dev/null || true
+    fi
+    
+    # Configure ClamAV
+    sed -i -e "s/^Example/#Example/" /etc/clamd.d/scan.conf
+    sed -i -e "s/#LocalSocket /LocalSocket /" /etc/clamd.d/scan.conf
+    sed -i -e "s/^Example/#Example/" /etc/freshclam.conf
+    
+    # Add custom malware databases
+    {
+        echo "DatabaseCustomURL http://cdn.malware.expert/malware.expert.ndb"
+        echo "DatabaseCustomURL http://cdn.malware.expert/malware.expert.hdb"
+        echo "DatabaseCustomURL http://cdn.malware.expert/malware.expert.ldb"
+        echo "DatabaseCustomURL http://cdn.malware.expert/malware.expert.fp"
+    } >> /etc/freshclam.conf
+    
+    echo "ClamAV installed successfully"
+}
+
+# Check OS compatibility with detailed reporting
+check_os_compatibility() {
+    local supported_versions=("7" "8" "9")
+    local supported_distros=("centos" "almalinux" "rocky" "rhel")
+    
+    echo "Checking OS compatibility..."
+    
+    if [[ ! " ${supported_distros[@]} " =~ " ${OS_NAME} " ]]; then
+        echo "Error: Unsupported OS distribution: $OS_NAME"
+        echo "Supported distributions: ${supported_distros[*]}"
+        return 1
+    fi
+    
+    if [[ ! " ${supported_versions[@]} " =~ " ${OS_VER} " ]]; then
+        echo "Error: Unsupported OS version: $OS_VER"
+        echo "Supported versions: ${supported_versions[*]}"
+        return 1
+    fi
+    
+    echo "✓ OS Compatibility Check Passed"
+    echo "  Detected: $OS_NAME $OS_VERSION (Major: $OS_VER)"
+    echo "  Type: $OS_TYPE"
+    echo "  PowerTools/CRB Repository: ${POWERTOOLS_REPO:-'Not applicable'}"
+    return 0
+}
+
+# Package manager wrapper function
+get_package_manager() {
+    if [[ $OS_VER -ge 8 ]]; then
+        echo "dnf"
+    else
+        echo "yum"
+    fi
+}
+
+# Initialize OS detection
+detect_os
+
+# Verify OS compatibility
+if ! check_os_compatibility; then
+    exit 1
+fi

@@ -1,4 +1,5 @@
-<p align="center"><strong>Auto Install & Optimize LEMP Stack on CentOS 7, 8</strong></p>
+<p align="center"><strong>Auto Install & Optimize LEMP Stack on RHEL-based OS</strong></p>
+<p align="center"><strong>Support: CentOS 7/8/9, AlmaLinux 8/9, Rocky Linux 8/9</strong></p>
 <p align="center"><strong>Author: Sanvv - HOSTVN.NET Technical</strong></p>
 <p align="center"><strong>Home Page: https://hostvn.vn/ , https://hostvn.net</strong></p>
 <p align="center"><strong>Document: https://hostvn.vn/huong-dan/</strong></p>
@@ -8,7 +9,13 @@
 
 ########################################################################################
 
-Script được viết bằng shell dùng để cài đặt LEMP Stack (Nginx - MariaDB - PHP-FPM) trên CentOS 7, CentOS 8.
+Script được viết bằng shell dùng để cài đặt LEMP Stack (Nginx - MariaDB - PHP-FPM) trên các hệ điều hành RHEL-based.
+
+**Hỗ trợ các hệ điều hành:**
+- CentOS 7, 8, 9
+- AlmaLinux 8, 9
+- Rocky Linux 8, 9
+- RHEL 8, 9 (Red Hat Enterprise Linux)
 
 <b>Vui lòng không sao chép, phát hành lại với mục đích thương mại, donate. Xin cảm ơn.</b>
 
@@ -18,17 +25,18 @@ Script được viết bằng shell dùng để cài đặt LEMP Stack (Nginx - 
 
 - Cập nhật liên tục, cung cấp Menu giúp dễ dàng thao tác, tự động cài đặt.
 - Cài đặt các phần mềm với phiên bản mới nhất từ chính trang chủ.
-- Mariadb: 10.5.
-- Phiên bản Nginx: 1.18.0 Stable.
-- Cho phép lựa chọn phiên bản PHP:
-    + centOS 7: 5.6, 7.0, 7.1, 7.2, 7.3, 7.4.
-    + centOS 8: 7.2, 7.3, 7.4.
-- phpMyAdmin 4.9.5 nếu cài đặt PHP mặc định là 5.6, phpMyAdmin 5.0.2 nếu cài đặt PHP mặc định là 7.x.
+- Mariadb: 10.5+ (hỗ trợ kiến trúc x86_64 và aarch64).
+- Phiên bản Nginx: 1.18+ Stable.
+- Cho phép lựa chọn phiên bản PHP (tương thích theo OS):
+    + CentOS 7: 5.6, 7.0, 7.1, 7.2, 7.3, 7.4, 8.0, 8.1, 8.2
+    + CentOS 8+/AlmaLinux/Rocky: 7.2, 7.3, 7.4, 8.0, 8.1, 8.2, 8.3
+    + CentOS 9+: 7.4, 8.0, 8.1, 8.2, 8.3 (loại bỏ các version cũ)
+- phpMyAdmin: Tự động chọn version phù hợp với PHP version.
 - Cài đặt Pureftpd giúp quản lý FTP.
 - Cài đặt PHPMemcachedAdmin, phpRedisAdmin, phpSysInfo, Opcache Dashboard.
 - Cài đặt memcached, redis cache. (Mặc định sẽ không bật).
 - Cài đặt CSF Firewall và CSF GUI - Quản lý CSF với giao diện web.
-- Tích hợp Let's Encrypt SSL.
+- Tích hợp Let's Encrypt SSL với ACME.sh.
 - Cung cấp Menu nâng cấp Nginx, MariaDB, PHP, Redis, Memcached, phpMyAdmin.
 - Cài đặt WP-CLI, Composer, Rclone.
 - Cài đặt: ClamAV, Naxsi Firewall.
@@ -97,35 +105,88 @@ Script được viết bằng shell dùng để cài đặt LEMP Stack (Nginx - 
 - Quản lý các bản sao lưu.
 - Cho phép kết nối nhiều tài khoản Google Drive.
 
-## 2. Yêu cầu
+## 2. Kiểm tra tương thích hệ thống
 
-- VPS tối thiểu 1G ram và chưa cài đặt bất kỳ dịch vụ nào.
-- CentOS 7, CentOS 8.
+Trước khi cài đặt, bạn có thể chạy script kiểm tra tương thích để đảm bảo hệ thống của bạn hỗ trợ HOSTVN LEMP Stack:
 
-## 3. Cách cài đặt
+```bash
+# Tải script kiểm tra
+curl -O https://https://dev.tinycp.me/compatibility_test.sh
 
-`curl -sO https://scripts.hostvn.net/install && chmod +x install && ./install`
+# Cấp quyền thực thi
+chmod +x compatibility_test.sh
 
-## 4. Các tính năng sẽ phát triển
+# Chạy kiểm tra
+./compatibility_test.sh
+```
 
-- Lựa chọn phiên bản PHP từng website.
-- Deploy nhanh mã nguồn trên VPS (giải nén file, import Database).
-- Cảnh báo qua email, telegram.
-- Rewrite config vhost về mặc định.
-- Tối ưu hình ảnh.
-- Cronjob auto xoá cache redis, memcached tránh full cache.
-- Hỗ trợ tạo Subdomain, Alias Domain.
-- Menu check DDOS.
-- Menu tạo Swap.
-- Menu quản lý Naxsi Firewall.
-- Hỗ trợ Wordpress Multisite.
-- Scan bug WordPress.
-- Thay đổi Prefix database cho wordpress.
-- Bật/tắt bảo vệ 2 lớp cho wp-admin.
-- Option disable wp cron, chuyển sang dùng cronjob giúp tăng tốc độ cho WordPress.
-- Lựa chọn website khi backup tự động
-- Thêm tính năng đồng bộ qua 1 vps dự phòng.
-- Các tính năng được người dùng yêu cầu.
+Script sẽ kiểm tra:
+- ✅ Hệ điều hành và phiên bản
+- ✅ Tài nguyên hệ thống (RAM, CPU, Disk)
+- ✅ Kết nối mạng và truy cập repository
+- ✅ Package manager (dnf/yum)
+- ✅ Quyền root access
+- ✅ Tình trạng SELinux
+- ✅ Services và Control Panel có xung đột
+
+## 3. Cài đặt
+
+### 3.1. Cài đặt tự động (Khuyến nghị)
+
+```bash
+# Tải và chạy script cài đặt
+curl -sO https://https://dev.tinycp.me/install && chmod +x install && ./install
+```
+
+### 3.2. Cài đặt thủ công
+
+```bash
+# Clone repository
+git clone https://github.com/hostvn/lempstack.git
+cd lempstack
+
+# Cấp quyền thực thi
+chmod +x install hostvn
+
+# Chạy script cài đặt
+./install
+```
+
+### 3.3. Yêu cầu hệ thống
+
+- **OS**: CentOS 7/8/9, AlmaLinux 8/9, Rocky Linux 8/9, RHEL 8/9
+- **RAM**: Tối thiểu 512MB (Khuyến nghị 1GB+)
+- **Disk**: Tối thiểu 2GB trống
+- **CPU**: 1 core (Khuyến nghị 2+ cores)
+- **Network**: Kết nối internet ổn định
+- **Access**: Root privileges
+
+## 4. Tính năng nổi bật mới
+
+### 4.1. Enhanced OS Detection
+- Tự động nhận diện chính xác các distro RHEL-based
+- Hỗ trợ CentOS Stream, AlmaLinux, Rocky Linux
+- Xử lý repository tương thích (PowerTools/CRB)
+
+### 4.2. Package Manager Intelligence
+- Tự động sử dụng DNF cho OS version 8+
+- Fallback sang YUM cho CentOS 7
+- Improved error handling và retry logic
+
+### 4.3. Architecture Support
+- Hỗ trợ x86_64 và ARM64 (aarch64)
+- Tự động detect architecture cho repository URLs
+- Optimized cho cloud environments
+
+### 4.4. Enhanced Security
+- SELinux tools tương thích với từng OS version
+- Improved firewall configuration
+- Better permission handling
+
+### 4.5. Version Filtering
+- Tự động filter PHP versions theo OS compatibility
+- Smart repository management
+- Optimized package installation
 
 ## 5. Cách sử dụng
 

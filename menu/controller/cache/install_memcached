@@ -33,10 +33,18 @@ set_var(){
 }
 
 install(){
-    if [[ "${OS_VER}" -eq 8 ]]; then
-        dnf -y install memcached
+    echo "Installing Memcached for $OS_NAME $OS_VER..."
+    
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        dnf -y install memcached || {
+            echo "Failed to install memcached"
+            exit 1
+        }
     else
-        yum -y install memcached
+        yum -y install memcached || {
+            echo "Failed to install memcached"
+            exit 1
+        }
     fi
 
     if [[ -f "/etc/sysconfig/memcached" ]]; then
@@ -49,7 +57,15 @@ CACHESIZE="${MAX_MEMORY}mb"
 OPTIONS="-l 127.0.0.1 -U 0"
 EOMEMCACHED
     fi
-    semanage permissive -a memcached_t
+    
+    # Configure SELinux
+    if command -v semanage &>/dev/null; then
+        semanage permissive -a memcached_t || {
+            echo "Warning: Could not set SELinux context for memcached"
+        }
+    fi
+    
+    echo "Memcached installed successfully"
 }
 
 inst_phpmemcachedadmin(){

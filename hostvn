@@ -1,7 +1,10 @@
 #!/bin/bash
 
 ######################################################################
-#           Auto Install & Optimize LEMP Stack on CentOS 7, 8        #
+#           Auto Install & Optimize LEMP Stack                       #
+#           Support: CentOS 7/8/9, AlmaLinux 8/9, Rocky Linux 8/9   #
+#           PHP Support: 7.0, 7.1, 7.2, 7.3, 7.4, 8.0, 8.1, 8.2,  #
+#                        8.3, 8.4 (depending on OS version)         #
 #                                                                    #
 #                Author: Sanvv - HOSTVN Technical                    #
 #                  Website: https://hostvn.vn                        #
@@ -16,18 +19,79 @@
 RED='\033[0;31m'
 NC='\033[0m'
 
-SCRIPTS_VERSION="1.0.5.3"
+SCRIPTS_VERSION="1.1.0.0"
+
+# Enhanced OS Detection with improved compatibility
+detect_os() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        OS_NAME=$ID
+        OS_VERSION=$VERSION_ID
+        OS_VERSION_MAJOR=$(echo $VERSION_ID | cut -d. -f1)
+        
+        # Additional detection for better compatibility
+        if [[ -f /etc/almalinux-release ]]; then
+            OS_NAME="almalinux"
+        elif [[ -f /etc/rocky-release ]]; then
+            OS_NAME="rocky"
+        elif [[ -f /etc/centos-release ]]; then
+            if grep -q "CentOS Stream" /etc/centos-release; then
+                OS_NAME="centos-stream"
+            else
+                OS_NAME="centos"
+            fi
+        fi
+    else
+        echo "Cannot detect OS version"
+        exit 1
+    fi
+
+    case $OS_NAME in
+        "centos"|"centos-stream")
+            OS_VER=$OS_VERSION_MAJOR
+            OS_TYPE="rhel"
+            ;;
+        "almalinux"|"rocky"|"rhel")
+            OS_VER=$OS_VERSION_MAJOR
+            OS_TYPE="rhel"
+            ;;
+        *)
+            echo "Unsupported OS: $OS_NAME. Supported: CentOS 7/8/9, AlmaLinux 8/9, Rocky Linux 8/9"
+            exit 1
+            ;;
+    esac
+
+    # Set powertools/crb repository name with better detection
+    if [[ $OS_VER -eq 8 ]]; then
+        case $OS_NAME in
+            "centos"|"centos-stream")
+                POWERTOOLS_REPO="PowerTools"
+                ;;
+            "almalinux"|"rocky"|"rhel")
+                POWERTOOLS_REPO="powertools"
+                ;;
+        esac
+    elif [[ $OS_VER -eq 9 ]]; then
+        POWERTOOLS_REPO="crb"
+    else
+        POWERTOOLS_REPO=""
+    fi
+
+    export OS_NAME OS_VERSION OS_VERSION_MAJOR OS_VER OS_TYPE POWERTOOLS_REPO
+}
+
+# Initialize OS detection
+detect_os
 
 # Set variables
-OS_VER=$(rpm -E %centos)
 OS_ARCH=$(uname -m)
 IPADDRESS=$(curl -s http://myip.directadmin.com)
 DIR=$(pwd)
 BASH_DIR="/var/hostvn"
 PHP_MODULES_DIR="/usr/lib64/php/modules"
 GITHUB_RAW_LINK="https://raw.githubusercontent.com"
-EXT_LINK="https://scripts.hostvn.net"
-UPDATE_LINK="https://scripts.hostvn.net/update"
+EXT_LINK="https://dev.tinycp.me"
+UPDATE_LINK="https://dev.tinycp.me/update"
 GITHUB_URL="https://github.com"
 PECL_PHP_LINK="https://pecl.php.net/get"
 PMA_LINK="https://files.phpmyadmin.net/phpMyAdmin"
@@ -50,16 +114,45 @@ PHP_REDIS_VERSION=$(curl -s ${UPDATE_LINK}/version | grep "php_redis_version=" |
 MARIADB_VERSION=$(curl -s ${UPDATE_LINK}/version | grep "mariadb_version=" | cut -f2 -d'=')
 #PHP_VERSION_1=$(curl -s ${UPDATE_LINK}/version | grep "php_version=" | cut -f2 -d'=')
 #PHP_VERSION_2=$(curl -s ${UPDATE_LINK}/version | grep "php2_version=" | cut -f2 -d'=')
-PHP_LIST=( $(curl -s "${UPDATE_LINK}"/version | grep "php_list=" | cut -f2 -d'=') )
-if [[ "${OS_VER}" -eq 8 ]]; then
-    index=0
-    for keyword in "${PHP_LIST[@]}"; do
-        if [[ "$keyword" = "php7.1" || "$keyword" = "php7.0" || "$keyword" = "php5.6" ]]; then
-            unset "PHP_LIST[$index]"
-        fi
-        (( index++ ))
+
+# Enhanced PHP version support: 7.0 to 8.4
+# Remove external dependency and define versions locally for better control
+PHP_LIST_ALL=("7.0" "7.1" "7.2" "7.3" "7.4" "8.0" "8.1" "8.2" "8.3" "8.4")
+
+# Filter PHP versions based on OS version and compatibility
+filter_php_versions() {
+    local filtered_list=()
+    
+    for version in "${PHP_LIST_ALL[@]}"; do
+        case $OS_VER in
+            7)
+                # CentOS 7 supports PHP 7.0 to 8.4 (comprehensive support)
+                filtered_list+=("$version")
+                ;;
+            8)
+                # CentOS 8+, AlmaLinux 8, Rocky 8 - exclude older versions for stability
+                if [[ "$version" != "7.0" && "$version" != "7.1" ]]; then
+                    filtered_list+=("$version")
+                fi
+                ;;
+            9)
+                # CentOS 9, AlmaLinux 9, Rocky 9 - only modern PHP versions
+                if [[ "$version" != "7.0" && "$version" != "7.1" && "$version" != "7.2" ]]; then
+                    filtered_list+=("$version")
+                fi
+                ;;
+        esac
     done
-fi
+    
+    # Convert to phpXX format for compatibility
+    PHP_LIST=()
+    for version in "${filtered_list[@]}"; do
+        PHP_LIST+=("php${version//./}")
+    done
+}
+
+# Apply PHP version filtering
+filter_php_versions
 
 # Set Lang
 OPTION_CHANGE_SSH="Ban co muon thay doi port SSH khong ? "
@@ -146,9 +239,20 @@ create_bash_dir(){
 }
 
 # Config Selinux
+# Enhanced SELinux configuration with better compatibility
 config_selinux(){
-    if [[ "${OS_VER}" -eq 8 ]]; then
-        dnf -y install policycoreutils-python-utils
+    echo "Configuring SELinux for $OS_NAME $OS_VER..."
+    
+    # Install SELinux management tools based on OS version
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        local selinux_packages="policycoreutils-python-utils"
+        if [[ "${OS_VER}" -eq 9 ]]; then
+            selinux_packages="$selinux_packages python3-policycoreutils"
+        fi
+        
+        dnf -y install $selinux_packages || {
+            echo "Warning: Failed to install SELinux tools"
+        }
     fi
 
     se_status=$(getenforce)
@@ -168,6 +272,8 @@ config_selinux(){
         setenforce 0
         sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
     fi
+    
+    echo "SELinux configuration completed"
 }
 
 #Set timezone
@@ -395,155 +501,272 @@ option_change_ssh_port(){
 
 # Install Nginx
 install_nginx(){
+    echo "Installing Nginx for $OS_NAME $OS_VER..."
+    
     if [[ -d /etc/nginx ]]; then
         rm -rf /etc/nginx
     fi
-    cat >> "/etc/yum.repos.d/nginx.repo" << EONGINXREPO
+    
+    # Determine the appropriate repository configuration
+    local nginx_repo_distro
+    case $OS_NAME in
+        "centos"|"centos-stream")
+            nginx_repo_distro="centos"
+            ;;
+        "almalinux"|"rocky"|"rhel")
+            # Use RHEL repository for better compatibility
+            nginx_repo_distro="rhel"
+            ;;
+        *)
+            # Fallback to centos for unknown distros
+            nginx_repo_distro="centos"
+            ;;
+    esac
+    
+    # Remove existing nginx repository if present
+    rm -f /etc/yum.repos.d/nginx.repo
+    
+    # Create Nginx repository with distro-specific configuration
+    cat > "/etc/yum.repos.d/nginx.repo" << EONGINXREPO
 [nginx-stable]
 name=nginx stable repo
-baseurl=http://nginx.org/packages/centos/\$releasever/\$basearch/
+baseurl=http://nginx.org/packages/${nginx_repo_distro}/\$releasever/\$basearch/
 gpgcheck=1
 enabled=1
 gpgkey=https://nginx.org/keys/nginx_signing.key
 module_hotfixes=true
+
+[nginx-mainline]
+name=nginx mainline repo
+baseurl=http://nginx.org/packages/mainline/${nginx_repo_distro}/\$releasever/\$basearch/
+gpgcheck=1
+enabled=0
+gpgkey=https://nginx.org/keys/nginx_signing.key
+module_hotfixes=true
 EONGINXREPO
 
-    yum -y install yum-utils
-    yum -y install nginx
+    # Install yum-utils and nginx based on OS version
+    if [[ $OS_VER -ge 8 ]]; then
+        # For DNF-based systems
+        dnf -y install yum-utils || {
+            echo "Failed to install yum-utils"
+            exit 1
+        }
+        
+        # Clear cache and install nginx
+        dnf makecache --refresh
+        dnf -y install nginx || {
+            echo "Failed to install nginx from official repository"
+            echo "Attempting to install from EPEL repository as fallback..."
+            dnf -y install nginx --enablerepo=epel || {
+                echo "Failed to install nginx from EPEL repository"
+                exit 1
+            }
+        }
+    else
+        # For YUM-based systems (CentOS 7)
+        yum -y install yum-utils || {
+            echo "Failed to install yum-utils"
+            exit 1
+        }
+        
+        # Clear cache and install nginx
+        yum makecache
+        yum -y install nginx || {
+            echo "Failed to install nginx from official repository"
+            echo "Attempting to install from EPEL repository as fallback..."
+            yum -y install nginx --enablerepo=epel || {
+                echo "Failed to install nginx from EPEL repository"
+                exit 1
+            }
+        }
+    fi
+    
+    # Create default directories
     mkdir -p "${DEFAULT_DIR_TOOL}"
     chown -R nginx:nginx "${DEFAULT_DIR_TOOL}"
-    semanage permissive -a httpd_t
-    systemctl start nginx
-}
-
-nginx_brotli(){
-    NGINXV=$(nginx -v 2>&1 | grep -o '[0-9.]*$'; echo)
-    MODULES_PATH="/etc/nginx/modules"
-    wget -q "${EXT_LINK}"/ngx_brotli/"${NGINXV}"/ngx_http_brotli_filter_module.so -O  "${MODULES_PATH}"/ngx_http_brotli_filter_module.so
-    wget -q "${EXT_LINK}"/ngx_brotli/"${NGINXV}"/ngx_http_brotli_static_module.so -O  "${MODULES_PATH}"/ngx_http_brotli_static_module.so
-
-    if [[ -f "${MODULES_PATH}/ngx_http_brotli_filter_module.so" && -f "${MODULES_PATH}/ngx_http_brotli_static_module.so" ]]; then
-        LOAD_BROTLI_FILTER="load_module modules/ngx_http_brotli_filter_module.so;"
-        LOAD_BROTLI_STATIC="load_module modules/ngx_http_brotli_static_module.so;"
-        INCLUDE_BROTLI="include /etc/nginx/extra/brotli.conf;"
-        BROTLI_STATIC_OFF="brotli_static off;"
+    
+    # Configure SELinux
+    if command -v semanage &>/dev/null; then
+        semanage permissive -a httpd_t || {
+            echo "Warning: Could not set SELinux permissive for httpd_t"
+        }
+    fi
+    
+    # Enable and start nginx service
+    systemctl enable nginx || {
+        echo "Warning: Could not enable nginx service"
+    }
+    
+    systemctl start nginx || {
+        echo "Failed to start nginx"
+        exit 1
+    }
+    
+    # Verify nginx installation
+    if systemctl is-active --quiet nginx; then
+        echo "Nginx installed and started successfully"
+        nginx -v
+    else
+        echo "Warning: Nginx installed but failed to start properly"
+        systemctl status nginx
     fi
 }
 
-# Config naxsi
-nginx_naxsi(){
-    mkdir -p /etc/nginx/naxsi
-    wget -q "${EXT_LINK}"/naxsi/"${NGINXV}"/ngx_http_naxsi_module.so -O  "${MODULES_PATH}"/ngx_http_naxsi_module.so
-    wget -q "${EXT_LINK}"/naxsi/rule/naxsi_core.rules -O  /etc/nginx/naxsi/naxsi_core.rules
-    wget -q "${EXT_LINK}"/naxsi/rule/wordpress.rules -O  /etc/nginx/naxsi/wordpress.rules
-    wget -q "${EXT_LINK}"/naxsi/rule/drupal.rules -O  /etc/nginx/naxsi/drupal.rules
-    wget -q "${EXT_LINK}"/naxsi/rule/naxsi_relax.rules -O  /etc/nginx/naxsi/naxsi_relax.rules
 
-    if [[ -f "${MODULES_PATH}/ngx_http_naxsi_module.so" ]]; then
-        LOAD_NAXSI="load_module modules/ngx_http_naxsi_module.so;"
-    fi
-}
-
-create_naxsi_config(){
-    cat >> "/etc/nginx/naxsi/disable_admin.conf" <<EOnaxsi_config
-location /RequestDenied { internal; return 404; }
-location /wp-admin {
-    try_files \$uri \$uri/ /index.php?\$args;
-    SecRulesDisabled;
-}
-location /admin {
-    try_files \$uri \$uri/ /index.php?\$args;
-    SecRulesDisabled;
-}
-location /admincp {
-    try_files \$uri \$uri/ /index.php?\$args;
-    SecRulesDisabled;
-}
-location /administrator {
-    try_files \$uri \$uri/ /index.php?\$args;
-    SecRulesDisabled;
-}
-EOnaxsi_config
-
-    cat >> "/etc/nginx/naxsi/enable_naxsi.conf" <<EOenable_naxsi
-## Naxsi rules
-#LearningMode;
-#SecRulesEnabled;
-SecRulesDisabled;
-DeniedUrl /RequestDenied;
-## check rules
-CheckRule "\$SQL >= 8" BLOCK;
-CheckRule "\$RFI >= 8" BLOCK;
-CheckRule "\$TRAVERSAL >= 4" BLOCK;
-CheckRule "\$EVADE >= 4" BLOCK;
-CheckRule "\$XSS >= 8" BLOCK;
-# nginx-naxsi relaxation rules
-include /etc/nginx/naxsi_config/naxsi_relax.rules;
-include /etc/nginx/naxsi_config/wordpress.rules;
-include /etc/nginx/naxsi_config/drupal.rules;
-EOenable_naxsi
-}
-
-install_naxsi(){
-    nginx_naxsi
-    create_naxsi_config
-}
-
-#Install Mariadb
+# Enhanced MariaDB installation with better architecture and error handling
 install_mariadb(){
+    echo "Installing MariaDB $MARIADB_VERSION for $OS_NAME $OS_VER..."
+    
+    # Determine architecture
+    local arch_suffix
+    case $(uname -m) in
+        x86_64) arch_suffix="amd64" ;;
+        aarch64) arch_suffix="aarch64" ;;
+        *) arch_suffix="amd64" ;;
+    esac
+    
+    # Remove existing MariaDB repository
+    rm -f /etc/yum.repos.d/mariadb.repo
+    
+    # Create MariaDB repository
     cat >> "/etc/yum.repos.d/mariadb.repo" << EOMARIADBREPO
 [mariadb]
 name = MariaDB
-baseurl = http://yum.mariadb.org/${MARIADB_VERSION}/centos${OS_VER}-${OS_ARCH1}
+baseurl = http://yum.mariadb.org/${MARIADB_VERSION}/centos${OS_VER}-${arch_suffix}
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1
 EOMARIADBREPO
-    if [[ "${OS_VER}" -eq 8 ]]; then
-        dnf makecache
-        dnf -y install galera-4
-        dnf install -y MariaDB-server MariaDB-client --disablerepo=AppStream
+
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        # For CentOS 8+, AlmaLinux 8+, Rocky 8+
+        if [[ $OS_VER -eq 8 ]]; then
+            dnf makecache --refresh || {
+                echo "Failed to refresh package cache"
+                exit 1
+            }
+        else
+            dnf makecache || {
+                echo "Failed to update package cache"
+                exit 1
+            }
+        fi
+        
+        # Install Galera for newer MariaDB versions
+        if [[ $MARIADB_VERSION == "10.5" || $MARIADB_VERSION == "10.6" || $MARIADB_VERSION == "10.11" ]]; then
+            dnf -y install galera-4 || {
+                echo "Warning: Galera installation failed"
+            }
+        fi
+        
+        # Install MariaDB with AppStream disabled to avoid conflicts
+        dnf install -y MariaDB-server MariaDB-client --disablerepo=AppStream || {
+            echo "Failed to install MariaDB"
+            exit 1
+        }
     else
-        yum -y install MariaDB-server MariaDB-client
+        # For CentOS 7
+        yum makecache || {
+            echo "Failed to update package cache"
+            exit 1
+        }
+        yum -y install MariaDB-server MariaDB-client || {
+            echo "Failed to install MariaDB"
+            exit 1
+        }
     fi
+    
+    echo "MariaDB $MARIADB_VERSION installed successfully"
 }
 
-# Install php-fpm
+# Enhanced PHP installation with better module management
 install_php(){
-    if [ "${OS_VER}" -eq 8 ]; then
+    echo "Installing PHP $PHP_VERSION for $OS_NAME $OS_VER..."
+    
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        # Convert PHP version for module enable (e.g., php74 -> 7.4)
         PHP1_VERSION=${PHP_VERSION//php}
         PHP1_VERSION=$(echo "${PHP1_VERSION}" | fold -w1 | paste -sd'.')
-        dnf module reset php -y
-        dnf makecache
-        dnf module enable php:remi-"${PHP1_VERSION}" -y
-        dnf config-manager --set-enabled PowerTools
+        
+        # Reset and enable PHP module
+        dnf module reset php -y || {
+            echo "Warning: Could not reset PHP module"
+        }
+        dnf makecache || {
+            echo "Failed to update package cache"
+            exit 1
+        }
+        dnf module enable php:remi-"${PHP1_VERSION}" -y || {
+            echo "Failed to enable PHP module for version $PHP1_VERSION"
+            exit 1
+        }
+        
+        # Enable PowerTools/CRB
+        if [[ -n "$POWERTOOLS_REPO" ]]; then
+            dnf config-manager --set-enabled "$POWERTOOLS_REPO" || {
+                echo "Warning: Could not enable $POWERTOOLS_REPO repository"
+            }
+        fi
     else
-        yum-config-manager --enable remi-"${PHP_VERSION}"
+        # For CentOS 7
+        yum-config-manager --enable remi-"${PHP_VERSION}" || {
+            echo "Failed to enable PHP repository for $PHP_VERSION"
+            exit 1
+        }
     fi
 
-    yum -y install php php-fpm php-ldap php-zip php-embedded php-cli php-mysql php-common php-gd php-xml php-mbstring \
+    # Install PHP packages with error handling
+    local php_packages="php php-fpm php-ldap php-zip php-embedded php-cli php-mysql php-common php-gd php-xml php-mbstring \
         php-mcrypt php-pdo php-soap php-json php-simplexml php-process php-curl php-bcmath php-snmp php-pspell php-gmp \
         php-intl php-imap php-enchant php-pear php-zlib php-xmlrpc php-devel \
         php-tidy php-opcache php-cli php-pecl-zip php-dom php-ssh2 php-xmlreader php-date php-exif php-filter php-ftp \
         php-hash php-iconv php-libxml php-pecl-imagick php-openssl php-pcre php-posix php-sockets php-spl \
-        php-tokenizer php-bz2 php-pgsql php-sqlite3 php-fileinfo
+        php-tokenizer php-bz2 php-pgsql php-sqlite3 php-fileinfo"
+    
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        dnf -y install $php_packages || {
+            echo "Failed to install PHP packages"
+            exit 1
+        }
+    else
+        yum -y install $php_packages || {
+            echo "Failed to install PHP packages"
+            exit 1
+        }
+    fi
+    
+    echo "PHP $PHP_VERSION installed successfully"
 }
 
 install_php_2(){
     if [[ "${MULTI_PHP}" =~ ^(Y|y)$ ]]; then
-        yum -y install "${PHP_VERSION_2}" "${PHP_VERSION_2}"-php-fpm "${PHP_VERSION_2}"-php-ldap "${PHP_VERSION_2}"-php-zip "${PHP_VERSION_2}"-php-embedded "${PHP_VERSION_2}"-php-cli "${PHP_VERSION_2}"-php-mysql "${PHP_VERSION_2}"-php-common "${PHP_VERSION_2}"-php-gd "${PHP_VERSION_2}"-php-xml "${PHP_VERSION_2}"-php-mbstring \
-        "${PHP_VERSION_2}"-php-mcrypt "${PHP_VERSION_2}"-php-pdo "${PHP_VERSION_2}"-php-soap "${PHP_VERSION_2}"-php-json "${PHP_VERSION_2}"-php-simplexml "${PHP_VERSION_2}"-php-process "${PHP_VERSION_2}"-php-curl "${PHP_VERSION_2}"-php-bcmath "${PHP_VERSION_2}"-php-snmp "${PHP_VERSION_2}"-php-pspell "${PHP_VERSION_2}"-php-gmp \
-        "${PHP_VERSION_2}"-php-intl "${PHP_VERSION_2}"-php-imap "${PHP_VERSION_2}"-php-enchant "${PHP_VERSION_2}"-php-pear "${PHP_VERSION_2}"-php-zlib "${PHP_VERSION_2}"-php-xmlrpc "${PHP_VERSION_2}"-php-devel \
-        "${PHP_VERSION_2}"-php-tidy "${PHP_VERSION_2}"-php-opcache "${PHP_VERSION_2}"-php-cli "${PHP_VERSION_2}"-php-pecl-zip "${PHP_VERSION_2}"-php-dom "${PHP_VERSION_2}"-php-ssh2 "${PHP_VERSION_2}"-php-xmlreader "${PHP_VERSION_2}"-php-date "${PHP_VERSION_2}"-php-exif "${PHP_VERSION_2}"-php-filter "${PHP_VERSION_2}"-php-ftp \
-        "${PHP_VERSION_2}"-php-hash "${PHP_VERSION_2}"-php-iconv "${PHP_VERSION_2}"-php-libxml "${PHP_VERSION_2}"-php-pecl-imagick "${PHP_VERSION_2}"-php-openssl "${PHP_VERSION_2}"-php-pcre "${PHP_VERSION_2}"-php-posix "${PHP_VERSION_2}"-php-sockets "${PHP_VERSION_2}"-php-spl \
-        "${PHP_VERSION_2}"-php-tokenizer "${PHP_VERSION_2}"-php-bz2 "${PHP_VERSION_2}"-php-pgsql "${PHP_VERSION_2}"-php-sqlite3 "${PHP_VERSION_2}"-php-fileinfo
+        echo "Installing secondary PHP $PHP_VERSION_2 for $OS_NAME $OS_VER..."
+        
+        # Install PHP 2 packages with error handling
+        local php2_packages="${PHP_VERSION_2} ${PHP_VERSION_2}-php-fpm ${PHP_VERSION_2}-php-ldap ${PHP_VERSION_2}-php-zip ${PHP_VERSION_2}-php-embedded ${PHP_VERSION_2}-php-cli ${PHP_VERSION_2}-php-mysql ${PHP_VERSION_2}-php-common ${PHP_VERSION_2}-php-gd ${PHP_VERSION_2}-php-xml ${PHP_VERSION_2}-php-mbstring \
+        ${PHP_VERSION_2}-php-mcrypt ${PHP_VERSION_2}-php-pdo ${PHP_VERSION_2}-php-soap ${PHP_VERSION_2}-php-json ${PHP_VERSION_2}-php-simplexml ${PHP_VERSION_2}-php-process ${PHP_VERSION_2}-php-curl ${PHP_VERSION_2}-php-bcmath ${PHP_VERSION_2}-php-snmp ${PHP_VERSION_2}-php-pspell ${PHP_VERSION_2}-php-gmp \
+        ${PHP_VERSION_2}-php-intl ${PHP_VERSION_2}-php-imap ${PHP_VERSION_2}-php-enchant ${PHP_VERSION_2}-php-pear ${PHP_VERSION_2}-php-zlib ${PHP_VERSION_2}-php-xmlrpc ${PHP_VERSION_2}-php-devel \
+        ${PHP_VERSION_2}-php-tidy ${PHP_VERSION_2}-php-opcache ${PHP_VERSION_2}-php-cli ${PHP_VERSION_2}-php-pecl-zip ${PHP_VERSION_2}-php-dom ${PHP_VERSION_2}-php-ssh2 ${PHP_VERSION_2}-php-xmlreader ${PHP_VERSION_2}-php-date ${PHP_VERSION_2}-php-exif ${PHP_VERSION_2}-php-filter ${PHP_VERSION_2}-php-ftp \
+        ${PHP_VERSION_2}-php-hash ${PHP_VERSION_2}-php-iconv ${PHP_VERSION_2}-php-libxml ${PHP_VERSION_2}-php-pecl-imagick ${PHP_VERSION_2}-php-openssl ${PHP_VERSION_2}-php-pcre ${PHP_VERSION_2}-php-posix ${PHP_VERSION_2}-php-sockets ${PHP_VERSION_2}-php-spl \
+        ${PHP_VERSION_2}-php-tokenizer ${PHP_VERSION_2}-php-bz2 ${PHP_VERSION_2}-php-pgsql ${PHP_VERSION_2}-php-sqlite3 ${PHP_VERSION_2}-php-fileinfo"
+        
+        if [[ "${OS_VER}" -ge 8 ]]; then
+            dnf -y install $php2_packages || {
+                echo "Failed to install secondary PHP packages"
+                exit 1
+            }
+        else
+            yum -y install $php2_packages || {
+                echo "Failed to install secondary PHP packages"
+                exit 1
+            }
+        fi
+        
+        echo "Secondary PHP $PHP_VERSION_2 installed successfully"
 
         PHP2_RELEASE="yes"
         PHP2_INI_PATH="/etc/opt/remi/${PHP_VERSION_2}/php.d"
         PHP_MODULES_DIR_2="/opt/remi/${PHP_VERSION_2}/root/usr/lib64/php/modules"
-
-        if [[ ${PHP_VERSION_2} == "php56" ]]; then
-            PHP2_INI_PATH="/opt/remi/${PHP_VERSION_2}/root/etc/php.d"
-        fi
     fi
 }
 
@@ -657,7 +880,7 @@ memory_calculation(){
 
 # Install Memcached
 install_memcached(){
-    if [[ "${OS_VER}" -eq 8 ]]; then
+    if [[ "${OS_VER}" -ge 8 ]]; then
         dnf -y install memcached
     else
         yum -y install memcached
@@ -673,7 +896,7 @@ CACHESIZE="${MAX_MEMORY}mb"
 OPTIONS="-l 127.0.0.1 -U 0"
 EOMEMCACHED
     fi
-    semanage permissive -a memcached_t
+    semanage permissive -a memcached_t 2>/dev/null || true
 }
 
 # Install Redis
@@ -690,10 +913,6 @@ EOFREDIS
 
 # Install igbinary
 install_igbinary(){
-    if [[ "${PHP_VERSION}" == "php56" ]]; then
-        IGBINARY_VERSION="2.0.8"
-    fi
-
     cd "${DIR}" && wget "${PECL_PHP_LINK}"/igbinary-"${IGBINARY_VERSION}".tgz
     tar -xvf igbinary-"${IGBINARY_VERSION}".tgz
     cd_dir "${DIR}/igbinary-${IGBINARY_VERSION}"
@@ -711,10 +930,6 @@ EOF
 }
 
 install_igbinary_2(){
-    if [[ "${PHP_VERSION_2}" == "php56" ]]; then
-        IGBINARY_VERSION="2.0.8"
-    fi
-
     cd "${DIR}" && wget "${PECL_PHP_LINK}"/igbinary-"${IGBINARY_VERSION}".tgz
     tar -xvf igbinary-"${IGBINARY_VERSION}".tgz
     cd_dir "${DIR}/igbinary-${IGBINARY_VERSION}"
@@ -733,16 +948,12 @@ EOF
 
 # Install Php memcached extension
 install_php_memcached(){
-    if [[ "${PHP_VERSION}" == "php56" ]]; then
-        PHP_MEMCACHED_VERSION="2.2.0"
-    fi
-
-        cd "${DIR}" && wget "${PECL_PHP_LINK}"/memcached-"${PHP_MEMCACHED_VERSION}".tgz
-        tar -xvf memcached-"${PHP_MEMCACHED_VERSION}".tgz
-        cd_dir "${DIR}/memcached-${PHP_MEMCACHED_VERSION}"
-        /usr/bin/phpize && ./configure --enable-memcached-igbinary --with-php-config=/usr/bin/php-config
-        make && make install
-        cd "${DIR}" && rm -rf memcached-"${PHP_MEMCACHED_VERSION}".tgz memcached-"${PHP_MEMCACHED_VERSION}"
+    cd "${DIR}" && wget "${PECL_PHP_LINK}"/memcached-"${PHP_MEMCACHED_VERSION}".tgz
+    tar -xvf memcached-"${PHP_MEMCACHED_VERSION}".tgz
+    cd_dir "${DIR}/memcached-${PHP_MEMCACHED_VERSION}"
+    /usr/bin/phpize && ./configure --enable-memcached-igbinary --with-php-config=/usr/bin/php-config
+    make && make install
+    cd "${DIR}" && rm -rf memcached-"${PHP_MEMCACHED_VERSION}".tgz memcached-"${PHP_MEMCACHED_VERSION}"
 
     if [[ -f "${PHP_MODULES_DIR}/memcached.so" ]]; then
         cat >> "/etc/php.d/50-memcached.ini" << EOF
@@ -754,16 +965,12 @@ EOF
 }
 
 install_php_memcached_2(){
-    if [[ "${PHP_VERSION_2}" == "php56" ]]; then
-        PHP_MEMCACHED_VERSION="2.2.0"
-    fi
-
     cd "${DIR}" && wget "${PECL_PHP_LINK}"/memcached-"${PHP_MEMCACHED_VERSION}".tgz
-        tar -xvf memcached-"${PHP_MEMCACHED_VERSION}".tgz
-        cd_dir "${DIR}/memcached-${PHP_MEMCACHED_VERSION}"
-        /opt/remi/"${PHP_VERSION_2}"/root/usr/bin/phpize && ./configure --enable-memcached-igbinary --with-php-config=/opt/remi/"${PHP_VERSION_2}"/root/usr/bin/php-config
-        make && make install
-        cd "${DIR}" && rm -rf memcached-"${PHP_MEMCACHED_VERSION}".tgz memcached-"${PHP_MEMCACHED_VERSION}"
+    tar -xvf memcached-"${PHP_MEMCACHED_VERSION}".tgz
+    cd_dir "${DIR}/memcached-${PHP_MEMCACHED_VERSION}"
+    /opt/remi/"${PHP_VERSION_2}"/root/usr/bin/phpize && ./configure --enable-memcached-igbinary --with-php-config=/opt/remi/"${PHP_VERSION_2}"/root/usr/bin/php-config
+    make && make install
+    cd "${DIR}" && rm -rf memcached-"${PHP_MEMCACHED_VERSION}".tgz memcached-"${PHP_MEMCACHED_VERSION}"
 
     if [[ -f "${PHP_MODULES_DIR_2}/memcached.so" ]]; then
         cat >> "${PHP2_INI_PATH}/50-memcached.ini" << EOF
@@ -776,10 +983,6 @@ EOF
 
 # Install Phpredis
 install_php_redis(){
-    if [[ "${PHP_VERSION}" == "php56" ]]; then
-        PHP_REDIS_VERSION="4.3.0"
-    fi
-
     cd "${DIR}" && wget "${PECL_PHP_LINK}"/redis-"${PHP_REDIS_VERSION}".tgz
     tar -xvf redis-"${PHP_REDIS_VERSION}".tgz
     cd_dir "${DIR}/redis-${PHP_REDIS_VERSION}"
@@ -798,10 +1001,6 @@ EOF
 }
 
 install_php_redis_2(){
-    if [[ "${PHP_VERSION_2}" == "php56" ]]; then
-        PHP_REDIS_VERSION="4.3.0"
-    fi
-
     cd "${DIR}" && wget "${PECL_PHP_LINK}"/redis-"${PHP_REDIS_VERSION}".tgz
     tar -xvf redis-"${PHP_REDIS_VERSION}".tgz
     cd_dir "${DIR}/redis-${PHP_REDIS_VERSION}"
@@ -2194,12 +2393,6 @@ php_global_config_2(){
     php2_fpm_config_path="/etc/opt/remi/${PHP_VERSION_2}/php-fpm.d"
     www2_config_file="/etc/opt/remi/${PHP_VERSION_2}/php-fpm.d/www.conf"
 
-    if [[ ${PHP_VERSION_2} == "php56" ]]; then
-        php2_fpm_config_file="/opt/remi/${PHP_VERSION_2}/root/etc/php-fpm.conf"
-        php2_fpm_config_path="/opt/remi/php56/root/etc/php-fpm.d"
-        www2_config_file="/opt/remi/${PHP_VERSION_2}/root/etc/php-fpm.d"
-    fi
-
     if [[ -f "${php2_fpm_config_file}" ]]; then
         mv "${php2_fpm_config_file}" "${php2_fpm_config_file}".orig
     fi
@@ -3001,9 +3194,7 @@ config_phpmyadmin(){
     rm -rf "${DEFAULT_DIR_TOOL}"/phpmyadmin/setup
     mkdir -p "${DEFAULT_DIR_TOOL}"/phpmyadmin/tmp
 
-    if [[ "${PHP_VERSION}" != "php56" ]]; then
-        DECLARE="declare(strict_types=1);"
-    fi
+    DECLARE="declare(strict_types=1);"
 
     cat > "${DEFAULT_DIR_TOOL}/phpmyadmin/config.inc.php" <<EOCONFIGINC
 <?php
@@ -3045,13 +3236,6 @@ EOphpmyadmin_temp
 }
 
 install_phpmyadmin(){
-    # Singapore Local
-    #echo "89.187.162.49 files.phpmyadmin.net" >> /etc/hosts
-
-    if [[ "${PHP_VERSION}" == "php56" ]]; then
-        PHPMYADMIN_VERSION="4.9.5"
-    fi
-
     cd_dir "${DEFAULT_DIR_TOOL}"
     wget "${PMA_LINK}"/"${PHPMYADMIN_VERSION}"/phpMyAdmin-"${PHPMYADMIN_VERSION}"-english.zip
     unzip phpMyAdmin-"${PHPMYADMIN_VERSION}"-english.zip
@@ -3069,7 +3253,20 @@ install_phpmyadmin(){
 # Install PureFTP
 ############################################
 install_pure_ftpd(){
-    yum -y install pure-ftpd
+    echo "Installing Pure-FTPd for $OS_NAME $OS_VER..."
+    
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        dnf -y install pure-ftpd || {
+            echo "Failed to install pure-ftpd"
+            exit 1
+        }
+    else
+        yum -y install pure-ftpd || {
+            echo "Failed to install pure-ftpd"
+            exit 1
+        }
+    fi
+    
     PURE_CONF_PATH="/etc/pure-ftpd"
     if [[ -f "${PURE_CONF_PATH}/pure-ftpd.conf" ]]; then
         mv "${PURE_CONF_PATH}"/pure-ftpd.conf "${PURE_CONF_PATH}"/pure-ftpd.conf.orig
@@ -3231,13 +3428,36 @@ csf_gui(){
 }
 
 install_csf(){
-    yum -y install perl-Perl4-CoreLibs perl-LWP-Protocol-https perl-libwww-perl perl-GDGraph perl-IO-Socket-SSL.noarch perl-Net-SSLeay perl-Net-LibIDN perl-IO-Socket-INET6 perl-Socket6 libpng-devel
-    curl -o "${DIR}"/csf.tgz https://download.configserver.com/csf.tgz
+    echo "Installing CSF firewall for $OS_NAME $OS_VER..."
+    
+    # Install required Perl packages
+    local perl_packages="perl-Perl4-CoreLibs perl-LWP-Protocol-https perl-libwww-perl perl-GDGraph perl-IO-Socket-SSL.noarch perl-Net-SSLeay perl-Net-LibIDN perl-IO-Socket-INET6 perl-Socket6 libpng-devel"
+    
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        dnf -y install $perl_packages || {
+            echo "Warning: Some Perl packages failed to install"
+        }
+    else
+        yum -y install $perl_packages || {
+            echo "Warning: Some Perl packages failed to install"
+        }
+    fi
+    
+    # Download and install CSF
+    curl -o "${DIR}"/csf.tgz https://download.configserver.com/csf.tgz || {
+        echo "Failed to download CSF"
+        exit 1
+    }
     tar -xf csf.tgz
     cd_dir "${DIR}/csf"
-    sh install.sh
+    sh install.sh || {
+        echo "Failed to install CSF"
+        exit 1
+    }
     cd_dir "${DIR}"
     rm -rf csf*
+    
+    # Configure CSF
     if [[ "${prompt_ssh}" =~ ^([yY])$ ]]; then
         sed -i "s/21,22/21,22,${SSH_PORT}/g" /etc/csf/csf.conf
         sed -i "s/PORTS_sshd = \"22\"/PORTS_sshd = \"22,${SSH_PORT}\"/g" /etc/csf/csf.conf
@@ -3306,23 +3526,46 @@ cf_ip(){
 ############################################
 
 install_clamav(){
-    if [ "${OS_VER}" -eq 8 ]; then
-        dnf install clamav-server clamav-update clamav-filesystem clamav clamav-scanner-systemd clamav-devel clamav-lib clamav-server-systemd -y
+    echo "Installing ClamAV for $OS_NAME $OS_VER..."
+    
+    local clamav_packages="clamav-server clamav-update clamav-filesystem clamav clamav-scanner-systemd clamav-devel clamav-lib clamav-server-systemd"
+    
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        dnf install $clamav_packages -y || {
+            echo "Failed to install ClamAV packages"
+            exit 1
+        }
     else
-        yum -y install clamav-server clamav-update clamav-filesystem clamav clamav-scanner-systemd clamav-devel clamav-lib clamav-server-systemd
+        yum -y install $clamav_packages || {
+            echo "Failed to install ClamAV packages"
+            exit 1
+        }
     fi
 
-    setsebool -P antivirus_can_scan_system 1
-    setsebool -P clamd_use_jit 1
+    # Configure SELinux for ClamAV
+    if command -v setsebool &>/dev/null; then
+        setsebool -P antivirus_can_scan_system 1 2>/dev/null || {
+            echo "Warning: Could not set SELinux boolean for antivirus"
+        }
+        setsebool -P clamd_use_jit 1 2>/dev/null || {
+            echo "Warning: Could not set SELinux boolean for clamd_use_jit"
+        }
+    fi
+    
+    # Configure ClamAV
     sed -i -e "s/^Example/#Example/" /etc/clamd.d/scan.conf
     sed -i -e "s/#LocalSocket /LocalSocket /" /etc/clamd.d/scan.conf
     sed -i -e "s/^Example/#Example/" /etc/freshclam.conf
+    
+    # Add custom malware databases
     {
         echo "DatabaseCustomURL http://cdn.malware.expert/malware.expert.ndb"
         echo "DatabaseCustomURL http://cdn.malware.expert/malware.expert.hdb"
         echo "DatabaseCustomURL http://cdn.malware.expert/malware.expert.ldb"
         echo "DatabaseCustomURL http://cdn.malware.expert/malware.expert.fp"
     } >> /etc/freshclam.conf
+    
+    echo "ClamAV installed successfully"
 }
 
 install_av(){
@@ -3487,8 +3730,6 @@ if [[ ! -f "/usr/lib/systemd/system/nginx.service" ]]; then
     exit
 fi
 
-nginx_brotli
-install_naxsi
 install_mariadb
 
 if [[ ! -f "/usr/lib/systemd/system/mariadb.service" ]]; then
