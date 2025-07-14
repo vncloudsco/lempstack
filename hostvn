@@ -3675,6 +3675,8 @@ install_csf(){
     sed -i 's/CT_LIMIT = "0"/CT_LIMIT = "600"/g' /etc/csf/csf.conf
     sed -i 's/ICMP_IN = "0"/ICMP_IN = "1"/; s/ICMP_IN_RATE = "1/ICMP_IN_RATE = "5/' /etc/csf/csf.conf
     sed -i 's/PORTFLOOD = ""/PORTFLOOD = "21;tcp;20;300"/g' /etc/csf/csf.conf
+    # thêm whitelist port 22 cho ssh
+    csf -a "${SSH_PORT}" >/dev/null 2>&1 || true
     echo '#!/bin/sh' > /usr/sbin/sendmail
     chmod +x /usr/sbin/sendmail
     cat >> "/etc/csf/csf.pignore" << EOCSF
