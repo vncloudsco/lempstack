@@ -111,7 +111,8 @@ PHP_SYS_INFO_VERSION=$(curl -s ${UPDATE_LINK}/version | grep "phpsysinfo_version
 IGBINARY_VERSION=$(curl -s ${UPDATE_LINK}/version | grep "igbinary_version=" | cut -f2 -d'=')
 PHP_MEMCACHED_VERSION=$(curl -s ${UPDATE_LINK}/version | grep "php_memcached_version=" | cut -f2 -d'=')
 PHP_REDIS_VERSION=$(curl -s ${UPDATE_LINK}/version | grep "php_redis_version=" | cut -f2 -d'=')
-MARIADB_VERSION=$(curl -s ${UPDATE_LINK}/version | grep "mariadb_version=" | cut -f2 -d'=')
+#MARIADB_VERSION=$(curl -s ${UPDATE_LINK}/version | grep "mariadb_version=" | cut -f2 -d'=')
+# MariaDB version is now auto-selected based on OS compatibility
 #PHP_VERSION_1=$(curl -s ${UPDATE_LINK}/version | grep "php_version=" | cut -f2 -d'=')
 #PHP_VERSION_2=$(curl -s ${UPDATE_LINK}/version | grep "php2_version=" | cut -f2 -d'=')
 
@@ -347,32 +348,21 @@ select_php_ver(){
     while true
     do
         printf "%s\n" "${SELECT_PHP}"
-        PS3="${ENTER_OPTION}"
-        select opt in "${PHP_LIST[@]}"
-        do
-            case $REPLY in
-                [1-9]|[1-9][0-9])
-                    if [[ $REPLY -le ${#PHP_LIST[@]} ]]; then
-                        PHP_VERSION="${PHP_LIST[$((REPLY-1))]}"
-                        break
-                    else
-                        echo "Invalid selection. Please try again."
-                        continue
-                    fi
-                    ;;
-                *)
-                    echo "Invalid input. Please enter a number."
-                    continue
-                    ;;
-            esac
+        for i in "${!PHP_LIST[@]}"; do
+            printf "%d) %s\n" $((i+1)) "${PHP_LIST[i]}"
         done
-        echo
-
-        if [[ " ${PHP_LIST[*]} " == *" ${PHP_VERSION} "* ]]; then
+        printf "%s" "${ENTER_OPTION}"
+        read -r choice
+        
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#PHP_LIST[@]}" ]; then
+            PHP_VERSION="${PHP_LIST[$((choice-1))]}"
+            echo "Selected PHP version: $PHP_VERSION"
             break
         else
             clear
             printf "${RED}%s${NC}\n" "${WRONG_PHP_OPTION}"
+            printf "Please enter a number between 1 and %d.\n" "${#PHP_LIST[@]}"
+            sleep 2
         fi
     done
     sleep 1
@@ -399,35 +389,25 @@ select_php_ver_2(){
     while true
     do
         printf "%s\n" "${SELECT_PHP_2}"
-        PS3="${ENTER_OPTION}"
-        select opt in "${PHP_LIST[@]}"
-        do
-            case $REPLY in
-                [1-9]|[1-9][0-9])
-                    if [[ $REPLY -le ${#PHP_LIST[@]} ]]; then
-                        PHP_VERSION_2="${PHP_LIST[$((REPLY-1))]}"
-                        break
-                    else
-                        echo "Invalid selection. Please try again."
-                        continue
-                    fi
-                    ;;
-                *)
-                    echo "Invalid input. Please enter a number."
-                    continue
-                    ;;
-            esac
+        for i in "${!PHP_LIST[@]}"; do
+            printf "%d) %s\n" $((i+1)) "${PHP_LIST[i]}"
         done
-        echo
-
-        if [[ " ${PHP_LIST[*]} " == *" ${PHP_VERSION_2} "* ]]; then
+        printf "%s" "${ENTER_OPTION}"
+        read -r choice
+        
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#PHP_LIST[@]}" ]; then
+            PHP_VERSION_2="${PHP_LIST[$((choice-1))]}"
+            echo "Selected second PHP version: $PHP_VERSION_2"
             break
         else
             clear
-            printf "${RED}%s\n${NC}" "${INVALID_PHP2_OPTION}"
+            printf "${RED}%s${NC}\n" "${INVALID_PHP2_OPTION}"
+            printf "Please enter a number between 1 and %d.\n" "${#PHP_LIST[@]}"
+            sleep 2
         fi
     done
     sleep 1
+}
 }
 
 option_clamav(){
@@ -640,28 +620,29 @@ EONGINXREPO
 
 # Enhanced MariaDB installation with better architecture and error handling
 install_mariadb(){
-    echo "Installing MariaDB $MARIADB_VERSION for $OS_NAME $OS_VER..."
-    local arch_suffix
-    if [[ $OS_ARCH == "x86_64" ]]; then
-        arch_suffix="amd64"
-    else
-        arch_suffix="$OS_ARCH"
-    fi
-
+    echo "Installing MariaDB for $OS_NAME $OS_VER..."
+    
     # Remove old repo if exists
     rm -f /etc/yum.repos.d/mariadb.repo
-
-    # Chọn repo phù hợp cho từng OS
+    
+    # Determine MariaDB version and repo based on OS compatibility
+    local mariadb_version_to_use
     local mariadb_repo_url=""
+    local use_official_repo=true
+    
     case $OS_VER in
         7)
-            mariadb_repo_url="http://yum.mariadb.org/${MARIADB_VERSION}/centos7-amd64"
+            mariadb_version_to_use="10.5"
+            mariadb_repo_url="http://yum.mariadb.org/10.5/centos7-amd64"
             ;;
         8)
-            mariadb_repo_url="http://yum.mariadb.org/${MARIADB_VERSION}/rhel8-amd64"
+            mariadb_version_to_use="10.6"
+            mariadb_repo_url="http://yum.mariadb.org/10.6/rhel8-amd64"
             ;;
         9)
-            mariadb_repo_url="http://yum.mariadb.org/${MARIADB_VERSION}/rhel9-amd64"
+            # MariaDB 10.5 doesn't support CentOS 9, use 10.11 or system default
+            mariadb_version_to_use="10.11"
+            mariadb_repo_url="http://yum.mariadb.org/10.11/rhel9-amd64"
             ;;
         *)
             echo "Unsupported OS version for MariaDB install."
@@ -669,47 +650,87 @@ install_mariadb(){
             ;;
     esac
 
-    cat > "/etc/yum.repos.d/mariadb.repo" << EOMARIADBREPO
+    echo "Attempting to install MariaDB $mariadb_version_to_use..."
+
+    # Try official MariaDB repository first
+    if [[ "$use_official_repo" == "true" ]]; then
+        cat > "/etc/yum.repos.d/mariadb.repo" << EOMARIADBREPO
 [mariadb]
 name = MariaDB
 baseurl = $mariadb_repo_url
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1
+enabled=1
 EOMARIADBREPO
 
-    # Xử lý cache và xung đột AppStream
+        # Test repository availability
+        echo "Testing MariaDB repository availability..."
+        if [[ $OS_VER -ge 8 ]]; then
+            if ! dnf makecache --repo=mariadb 2>/dev/null; then
+                echo "Official MariaDB repository not available, falling back to system packages..."
+                use_official_repo=false
+                rm -f /etc/yum.repos.d/mariadb.repo
+            fi
+        else
+            if ! yum makecache --disablerepo=* --enablerepo=mariadb 2>/dev/null; then
+                echo "Official MariaDB repository not available, falling back to system packages..."
+                use_official_repo=false
+                rm -f /etc/yum.repos.d/mariadb.repo
+            fi
+        fi
+    fi
+
+    # Install MariaDB based on OS version and repo availability
     if [[ $OS_VER -ge 8 ]]; then
         dnf clean all
-        dnf makecache --refresh || dnf makecache
-        dnf -y remove mariadb mariadb-server || true
-        dnf -y module disable mariadb || true
-        dnf -y install MariaDB-server MariaDB-client --disablerepo=AppStream || {
-            echo "Failed to install MariaDB from MariaDB.org repo. Thử fallback về repo mặc định..."
+        dnf -y remove mariadb mariadb-server mysql mysql-server || true
+        dnf -y module disable mariadb mysql || true
+        
+        if [[ "$use_official_repo" == "true" ]]; then
+            dnf -y install MariaDB-server MariaDB-client --disablerepo=AppStream || {
+                echo "Failed to install from official repo, trying system packages..."
+                use_official_repo=false
+            }
+        fi
+        
+        if [[ "$use_official_repo" == "false" ]]; then
+            rm -f /etc/yum.repos.d/mariadb.repo
             dnf -y install mariadb-server mariadb || {
-                echo "Failed to install MariaDB from all sources."
+                echo "Failed to install MariaDB from system packages."
                 exit 1
             }
-        }
+            mariadb_version_to_use="system"
+        fi
     else
+        # CentOS 7
         yum clean all
-        yum makecache || true
-        yum -y remove mariadb mariadb-server || true
-        yum -y install MariaDB-server MariaDB-client || {
-            echo "Failed to install MariaDB from MariaDB.org repo. Thử fallback về repo mặc định..."
+        yum -y remove mariadb mariadb-server mysql mysql-server || true
+        
+        if [[ "$use_official_repo" == "true" ]]; then
+            yum -y install MariaDB-server MariaDB-client || {
+                echo "Failed to install from official repo, trying system packages..."
+                use_official_repo=false
+            }
+        fi
+        
+        if [[ "$use_official_repo" == "false" ]]; then
+            rm -f /etc/yum.repos.d/mariadb.repo
             yum -y install mariadb-server mariadb || {
-                echo "Failed to install MariaDB from all sources."
+                echo "Failed to install MariaDB from system packages."
                 exit 1
             }
-        }
+            mariadb_version_to_use="system"
+        fi
     fi
 
     # Enable & start service
-    systemctl enable mariadb || systemctl enable mariadb.service || true
+    systemctl enable mariadb 2>/dev/null || systemctl enable mariadb.service 2>/dev/null || true
     systemctl start mariadb || systemctl start mariadb.service || {
         echo "MariaDB service failed to start."
         exit 1
     }
-    echo "MariaDB $MARIADB_VERSION installed and started successfully."
+    
+    echo "MariaDB $mariadb_version_to_use installed and started successfully for $OS_NAME $OS_VER."
 }
 
 # Enhanced PHP installation with better module management
@@ -934,14 +955,41 @@ EOMEMCACHED
 
 # Install Redis
 install_redis(){
-    yum --enablerepo=remi install redis -y
-    mv /etc/redis.conf /etc/redis.conf.bak
-cat >> "/etc/redis.conf" << EOFREDIS
+    echo "Installing Redis for $OS_NAME $OS_VER..."
+    
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        dnf --enablerepo=remi install redis -y || {
+            echo "Failed to install Redis from Remi repo, trying EPEL..."
+            dnf -y install redis || {
+                echo "Failed to install Redis from all sources."
+                exit 1
+            }
+        }
+    else
+        yum --enablerepo=remi install redis -y || {
+            echo "Failed to install Redis from Remi repo, trying EPEL..."
+            yum -y install redis || {
+                echo "Failed to install Redis from all sources."
+                exit 1
+            }
+        }
+    fi
+    
+    mv /etc/redis.conf /etc/redis.conf.bak 2>/dev/null || true
+    cat >> "/etc/redis.conf" << EOFREDIS
 maxmemory ${MAX_MEMORY}mb
 maxmemory-policy allkeys-lru
 save ""
 EOFREDIS
-    semanage permissive -a redis_t
+    
+    # SELinux configuration (if available)
+    if command -v semanage &>/dev/null; then
+        semanage permissive -a redis_t || {
+            echo "Warning: Could not set SELinux permissive for redis_t"
+        }
+    fi
+    
+    echo "Redis installed successfully"
 }
 
 # Install igbinary
@@ -3660,12 +3708,12 @@ start_service() {
 install_wpcli_packages(){
     sed -i '/memory_limit/d' /etc/php.d/00-hostvn-custom.ini
     echo "memory_limit = -1" >> /etc/php.d/00-hostvn-custom.ini
-    systemctl php-fpm restart
+    systemctl restart php-fpm
     wp package install iandunn/wp-cli-rename-db-prefix
     wp package install markri/wp-sec
     sed -i '/memory_limit/d' /etc/php.d/00-hostvn-custom.ini
     echo "memory_limit = ${MAX_MEMORY}M" >> /etc/php.d/00-hostvn-custom.ini
-    systemctl php-fpm restart
+    systemctl restart php-fpm
 }
 
 ############################################
