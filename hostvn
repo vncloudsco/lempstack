@@ -350,13 +350,25 @@ select_php_ver(){
         PS3="${ENTER_OPTION}"
         select opt in "${PHP_LIST[@]}"
         do
-            case $opt in
-                "$opt") PHP_VERSION="${opt/.}"; break;;
+            case $REPLY in
+                [1-9]|[1-9][0-9])
+                    if [[ $REPLY -le ${#PHP_LIST[@]} ]]; then
+                        PHP_VERSION="${PHP_LIST[$((REPLY-1))]}"
+                        break
+                    else
+                        echo "Invalid selection. Please try again."
+                        continue
+                    fi
+                    ;;
+                *)
+                    echo "Invalid input. Please enter a number."
+                    continue
+                    ;;
             esac
         done
         echo
 
-        if [[ " ${PHP_LIST[*]} " == *" $(echo "${PHP_VERSION}" | fold -w4 | paste -sd'.') "* ]]; then
+        if [[ " ${PHP_LIST[*]} " == *" ${PHP_VERSION} "* ]]; then
             break
         else
             clear
@@ -390,13 +402,25 @@ select_php_ver_2(){
         PS3="${ENTER_OPTION}"
         select opt in "${PHP_LIST[@]}"
         do
-            case $opt in
-                "$opt") PHP_VERSION_2="${opt/.}"; break;;
+            case $REPLY in
+                [1-9]|[1-9][0-9])
+                    if [[ $REPLY -le ${#PHP_LIST[@]} ]]; then
+                        PHP_VERSION_2="${PHP_LIST[$((REPLY-1))]}"
+                        break
+                    else
+                        echo "Invalid selection. Please try again."
+                        continue
+                    fi
+                    ;;
+                *)
+                    echo "Invalid input. Please enter a number."
+                    continue
+                    ;;
             esac
         done
         echo
 
-        if [[ " ${PHP_LIST[*]} " == *" $(echo "${PHP_VERSION_2}" | fold -w4 | paste -sd'.') "* ]]; then
+        if [[ " ${PHP_LIST[*]} " == *" ${PHP_VERSION_2} "* ]]; then
             break
         else
             clear
