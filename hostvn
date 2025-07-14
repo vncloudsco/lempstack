@@ -408,7 +408,6 @@ select_php_ver_2(){
     done
     sleep 1
 }
-}
 
 option_clamav(){
     if [[ ${RAM_TOTAL} -gt 1049576 ]]; then
