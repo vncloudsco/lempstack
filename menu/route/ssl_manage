@@ -32,10 +32,10 @@ do
     fi
     case ${CHOICE} in
         1) clear; menu_letencrypt;;
-        2) clear; bash "${BASH_DIR}"/controller/ssl/paid_ssl;;
-        3) clear; bash "${BASH_DIR}"/controller/ssl/cf_api;;
-        4) clear; bash "${BASH_DIR}"/controller/ssl/le_alias_domain;;
-        5) clear; bash "${BASH_DIR}"/controller/ssl/remove_le;;
+        2) clear; bash "${BASH_DIR}"/menu/controller/ssl/paid_ssl;;
+        3) clear; bash "${BASH_DIR}"/menu/controller/ssl/cf_api;;
+        4) clear; bash "${BASH_DIR}"/menu/controller/ssl/le_alias_domain;;
+        5) clear; bash "${BASH_DIR}"/menu/controller/ssl/remove_le;;
         0) clear; menu_primary ;;
         *) clear; printf "%s\n" "${RED}Lua chon cua ban khong chinh xac. Vui long chon lai.${NC}";;
     esac
