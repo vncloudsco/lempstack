@@ -90,7 +90,7 @@ detect_os
 
 # Set variables
 OS_ARCH=$(uname -m)
-IPADDRESS=$(curl -s http://myip.directadmin.com)
+IPADDRESS=$(curl -4 -s https://ifconfig.io/ip)
 DIR=$(pwd)
 BASH_DIR="/var/hostvn"
 PHP_MODULES_DIR="/usr/lib64/php/modules"
