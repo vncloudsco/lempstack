@@ -938,10 +938,18 @@ memory_calculation(){
 
 # Install Memcached
 install_memcached(){
+    echo "Installing Memcached for $OS_NAME $OS_VER..."
+    
     if [[ "${OS_VER}" -ge 8 ]]; then
-        dnf -y install memcached
+        dnf -y install memcached libmemcached libmemcached-devel || {
+            echo "Failed to install memcached packages"
+            exit 1
+        }
     else
-        yum -y install memcached
+        yum -y install memcached libmemcached libmemcached-devel || {
+            echo "Failed to install memcached packages"
+            exit 1
+        }
     fi
 
     if [[ -f "/etc/sysconfig/memcached" ]]; then
@@ -950,11 +958,19 @@ install_memcached(){
 PORT="11211"
 USER="memcached"
 MAXCONN="${MAX_CLIENT}"
-CACHESIZE="${MAX_MEMORY}mb"
+CACHESIZE="${MAX_MEMORY}"
 OPTIONS="-l 127.0.0.1 -U 0"
 EOMEMCACHED
     fi
-    semanage permissive -a memcached_t 2>/dev/null || true
+    
+    # SELinux configuration (if available)
+    if command -v semanage &>/dev/null; then
+        semanage permissive -a memcached_t 2>/dev/null || {
+            echo "Warning: Could not set SELinux permissive for memcached_t"
+        }
+    fi
+    
+    echo "Memcached installed successfully"
 }
 
 # Install Redis
@@ -1033,10 +1049,21 @@ EOF
 
 # Install Php memcached extension
 install_php_memcached(){
+    echo "Installing PHP Memcached extension..."
+    
+    # Ensure libmemcached-devel is installed
+    if [[ "${OS_VER}" -ge 8 ]]; then
+        dnf -y install libmemcached-devel zlib-devel || true
+    else
+        yum -y install libmemcached-devel zlib-devel || true
+    fi
+    
     cd "${DIR}" && wget "${PECL_PHP_LINK}"/memcached-"${PHP_MEMCACHED_VERSION}".tgz
     tar -xvf memcached-"${PHP_MEMCACHED_VERSION}".tgz
     cd_dir "${DIR}/memcached-${PHP_MEMCACHED_VERSION}"
-    /usr/bin/phpize && ./configure --enable-memcached-igbinary --with-php-config=/usr/bin/php-config
+    
+    # Configure with explicit libmemcached path
+    /usr/bin/phpize && ./configure --enable-memcached-igbinary --with-libmemcached-dir=/usr --with-php-config=/usr/bin/php-config
     make && make install
     cd "${DIR}" && rm -rf memcached-"${PHP_MEMCACHED_VERSION}".tgz memcached-"${PHP_MEMCACHED_VERSION}"
 
@@ -1044,16 +1071,22 @@ install_php_memcached(){
         cat >> "/etc/php.d/50-memcached.ini" << EOF
 extension=memcached.so
 EOF
+        echo "PHP Memcached extension installed successfully"
     else
         echo "${INST_MEMEXT_ERR}" >> ${LOG}
+        echo "Failed to install PHP Memcached extension"
     fi
 }
 
 install_php_memcached_2(){
+    echo "Installing PHP Memcached extension for PHP 2..."
+    
     cd "${DIR}" && wget "${PECL_PHP_LINK}"/memcached-"${PHP_MEMCACHED_VERSION}".tgz
     tar -xvf memcached-"${PHP_MEMCACHED_VERSION}".tgz
     cd_dir "${DIR}/memcached-${PHP_MEMCACHED_VERSION}"
-    /opt/remi/"${PHP_VERSION_2}"/root/usr/bin/phpize && ./configure --enable-memcached-igbinary --with-php-config=/opt/remi/"${PHP_VERSION_2}"/root/usr/bin/php-config
+    
+    # Configure with explicit libmemcached path
+    /opt/remi/"${PHP_VERSION_2}"/root/usr/bin/phpize && ./configure --enable-memcached-igbinary --with-libmemcached-dir=/usr --with-php-config=/opt/remi/"${PHP_VERSION_2}"/root/usr/bin/php-config
     make && make install
     cd "${DIR}" && rm -rf memcached-"${PHP_MEMCACHED_VERSION}".tgz memcached-"${PHP_MEMCACHED_VERSION}"
 
@@ -1061,8 +1094,10 @@ install_php_memcached_2(){
         cat >> "${PHP2_INI_PATH}/50-memcached.ini" << EOF
 extension=memcached.so
 EOF
+        echo "PHP Memcached extension for PHP 2 installed successfully"
     else
         echo "${INST_MEMEXT_ERR_2}" >> ${LOG}
+        echo "Failed to install PHP Memcached extension for PHP 2"
     fi
 }
 
