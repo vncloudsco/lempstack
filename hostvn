@@ -1182,19 +1182,28 @@ self_signed_ssl(){
     local email_field=""
     local clean_email="${ADMIN_EMAIL}"
     
-    # Clean any HTML/unwanted content from email
-    clean_email=$(echo "${clean_email}" | sed 's/<[^>]*>//g' | tr -d '\n\r' | xargs)
+    # Clean any HTML/unwanted content from email (multiple passes)
+    clean_email=$(echo "${clean_email}" | sed 's/<[^>]*>//g' | tr -d '\n\r' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+    clean_email=$(echo "${clean_email}" | grep -oE '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$' || echo "")
     
     # Validate email format
     if [[ -n "${clean_email}" && "${clean_email}" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
         email_field="/emailAddress=${clean_email}"
         echo "Using email for SSL certificate: ${clean_email}"
     else
-        echo "Warning: Invalid or missing email address for SSL certificate. Using default."
+        echo "Warning: Invalid or missing email address for SSL certificate. Skipping email field."
         email_field=""
     fi
     
-    openssl req -x509 -new -days 3650 -key "${self_signed_dir}/server.key" -out "${self_signed_dir}/server.crt" -subj "/C=VN/ST=Cau_Giay/L=Ha_Noi/O=${AUTHOR}/OU=IT/CN=${IPADDRESS}${email_field}"
+    # Generate certificate without problematic email if needed
+    if [[ -n "${email_field}" ]]; then
+        openssl req -x509 -new -days 3650 -key "${self_signed_dir}/server.key" -out "${self_signed_dir}/server.crt" -subj "/C=VN/ST=Cau_Giay/L=Ha_Noi/O=${AUTHOR}/OU=IT/CN=${IPADDRESS}${email_field}" 2>/dev/null || {
+            echo "Failed to create certificate with email, trying without email..."
+            openssl req -x509 -new -days 3650 -key "${self_signed_dir}/server.key" -out "${self_signed_dir}/server.crt" -subj "/C=VN/ST=Cau_Giay/L=Ha_Noi/O=${AUTHOR}/OU=IT/CN=${IPADDRESS}"
+        }
+    else
+        openssl req -x509 -new -days 3650 -key "${self_signed_dir}/server.key" -out "${self_signed_dir}/server.crt" -subj "/C=VN/ST=Cau_Giay/L=Ha_Noi/O=${AUTHOR}/OU=IT/CN=${IPADDRESS}"
+    fi
 }
 
 create_nginx_conf(){
@@ -3145,15 +3154,13 @@ Y
 EOF
     else
         echo "mysql_secure_installation not found, configuring MariaDB manually..."
-        # Configure MariaDB security manually with version compatibility
+        # Configure MariaDB security manually with modern syntax
         mysql -u root << EOSQL
--- Set root password (compatible with both old and new MariaDB versions)
-SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${SQLPASS}');
--- Alternative for newer MariaDB versions
-UPDATE mysql.user SET authentication_string = PASSWORD('${SQLPASS}') WHERE User = 'root' AND Host = 'localhost';
+-- Set root password (modern MariaDB syntax)
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${SQLPASS}';
 -- Remove anonymous users
 DELETE FROM mysql.user WHERE User='';
--- Remove remote root access
+-- Remove remote root access  
 DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
 -- Drop test database
 DROP DATABASE IF EXISTS test;
