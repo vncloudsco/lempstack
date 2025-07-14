@@ -1,0 +1,42 @@
+#!/bin/bash
+
+######################################################################
+#           Auto Install & Optimize LEMP Stack on CentOS            #
+#                                                                    #
+#                Author: HOSTVN Technical Team                       #
+#                  Website: https://hostvn.vn                        #
+#                                                                    #
+#              Please do not remove copyright. Thank!                #
+#  Please do not copy under any circumstance for commercial reason!  #
+######################################################################
+
+source /var/hostvn/menu/helpers/function
+
+CHOICE=1
+
+printf "%s================================%s\n" "${GREEN}" "${NC}"
+printf "%s      Telegram Notifications    %s\n" "${GREEN}" "${NC}"
+printf "%s================================%s\n" "${GREEN}" "${NC}"
+
+while [ "${CHOICE}" != "0" ]
+do
+    printf "%s1. SSH Login Notification%s\n" "${GREEN}" "${NC}"
+    printf "%s2. Service Monitor Notification%s\n" "${GREEN}" "${NC}"
+    printf "%s3. Disk Usage Notification%s\n" "${GREEN}" "${NC}"
+    printf "%s4. Xoa Telegram Notifications%s\n" "${GREEN}" "${NC}"
+    printf "%s================================%s\n" "${GREEN}" "${NC}"
+    read -r -p " Nhap vao lua chon cua ban [0 = Thoat] " CHOICE
+    if [ -z "${CHOICE}" ]
+    then
+        CHOICE=1
+        continue
+    fi
+    case ${CHOICE} in
+        1) clear; bash "${BASH_DIR}"/controller/telegram/ssh_notify;;
+        2) clear; bash "${BASH_DIR}"/controller/telegram/service_notify;;
+        3) clear; bash "${BASH_DIR}"/controller/telegram/disk_notify;;
+        4) clear; bash "${BASH_DIR}"/controller/telegram/delete_notify;;
+        0) clear; menu_primary ;;
+        *) clear; printf "%s\n" "${RED}Lua chon cua ban khong chinh xac. Vui long chon lai.${NC}";;
+    esac
+done

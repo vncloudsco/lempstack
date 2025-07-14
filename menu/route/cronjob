@@ -1,6 +1,12 @@
 #!/bin/bash
 
-######################################################################
+#####    printf "%s1. Kiem tra cac Cronjob tren VPS %s\n" "${GREEN}" "${NC}"
+    printf "%s2. Tao Cronjob tu dong backup tai VPS %s\n" "${GREEN}" "${NC}"
+    printf "%s3. Tao Cronjob tu dong backup len Google Drive%s\n" "${GREEN}" "${NC}"
+    printf "%s4. Tao Cronjob backup len VPS khac%s\n" "${GREEN}" "${NC}"
+    printf "%s5. Tao Cronjob backup to Telegram%s\n" "${GREEN}" "${NC}"
+    printf "%s6. Xoa Cronjob%s\n" "${GREEN}" "${NC}"
+    printf "%s =============================================%s\n" "${GREEN}" "${NC}"###########################################################
 #           Auto Install & Optimize LEMP Stack on CentOS 7, 8        #
 #                                                                    #
 #                Author: Sanvv - HOSTVN Technical                    #
@@ -21,8 +27,9 @@ do
     printf "%s1. Kiem tra cac Cronjob tren VPS %s\n" "${GREEN}" "${NC}"
     printf "%s2. Tao Cronjob tu dong backup tai VPS %s\n" "${GREEN}" "${NC}"
     printf "%s3. Tao Cronjob tu dong backup len Google Drive%s\n" "${GREEN}" "${NC}"
-    printf "%s4. Tao cronjob tuy chinh%s\n" "${GREEN}" "${NC}"
-    printf "%s5. Xóa cronjob%s\n" "${GREEN}" "${NC}"
+    printf "%s4. Tao Cronjob backup to Telegram%s\n" "${GREEN}" "${NC}"
+    printf "%s5. Tao cronjob tuy chinh%s\n" "${GREEN}" "${NC}"
+    printf "%s6. Xóa cronjob%s\n" "${GREEN}" "${NC}"
     printf "%s =============================================%s\n" "${GREEN}" "${NC}"
     read -r -p " Nhap vao lua chon cua ban [0 = Thoat] " CHOICE
     if [ -z "${CHOICE}" ]
@@ -39,14 +46,15 @@ do
             ;;
         2) clear; cron_backup_local ;;
         3) clear; cron_backup_gg ;;
-        4)
+        4) clear; cron_backup_telegram ;;
+        5)
             clear
             printf "Dang mo trinh soan thao nano\n"
             sleep 2
             EDITOR=nano crontab -e
             menu_cronjob
             ;;
-        5) clear; cron_destroy ;;
+        6) clear; cron_destroy ;;
         0) clear; menu_primary ;;
         *) clear; printf "%s\n" "${GREEN}Lua chon cua ban khong chinh xac. Vui long chon lai.${RED}";;
     esac

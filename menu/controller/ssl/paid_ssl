@@ -1,0 +1,261 @@
+#!/bin/bash
+
+######################################################################
+#           Auto Install & Optimize LEMP Stack on CentOS            #
+#                                                                    #
+#                Author: HOSTVN Technical Team                       #
+#                  Website: https://hostvn.vn                        #
+#                                                                    #
+#              Please do not remove copyright. Thank!                #
+#  Please do not copy under any circumstance for commercial reason!  #
+######################################################################
+
+source /var/hostvn/menu/validate/rule
+source /var/hostvn/menu/helpers/function
+
+printf "%s========================%s\n" "${GREEN}" "${NC}"
+printf "%s          SSL           %s\n" "${GREEN}" "${NC}"
+printf "%s========================%s\n" "${GREEN}" "${NC}"
+echo
+
+_select_ssl_action() {
+    clear
+    printf "%s\n" "Lua chon thao tac ban muon thuc hien"
+    PS3="Nhap vao lua chon cua ban [ 1 - 5 ]: "
+    options=("Tao CSR" "Tao CRT/CA" "Tao Private Key" "Remove SSL" "Cancel")
+    select opt in "${options[@]}"; do
+        case $opt in
+        "Tao CSR")
+            action="create_csr"
+            break
+            ;;
+        "Tao CRT/CA")
+            action="create_crt"
+            break
+            ;;
+        "Tao Private Key")
+            action="create_key"
+            break
+            ;;
+        "Remove SSL")
+            action="remove_ssl"
+            break
+            ;;
+        "Cancel")
+            action="cancel"
+            break
+            ;;
+        *) printf "${RED}%s${NC}\n" "Lua chon cua ban khong chinh xac. Vui long chon lai. $REPLY" ;;
+        esac
+    done
+    sleep 1
+}
+
+_create_csr(){
+    if [[ -f "${SSL_DIR}/${domain}/paid/${domain}.csr" || -f "${SSL_DIR}/${domain}/paid/private.key" ]]; then
+        while true; do
+            read -r -p "Ban co muon xoa file CSR cu khong (y/n)? " prompt_delete_old_csr
+            echo
+            if [[ "${prompt_delete_old_csr}" =~ ^([yY])$ || "${prompt_delete_old_csr}" =~ ^([nN])$ ]]; then
+                break
+            else
+                printf "%s\n" "${RED}Lua chon cua ban khong chinh xac. Vui long nhap lai.${NC}"
+            fi
+        done
+    fi
+
+    if [[ "${prompt_delete_old_csr}" =~ ^([nN])$ ]]; then
+        notify="${RED}Huy thao tac.${NC}"
+    else
+        rm -rf "${SSL_DIR}"/"${domain}"/paid/"${domain}".csr
+        rm -rf "${SSL_DIR}"/"${domain}"/paid/key.pem
+        country="VN"
+        city="Ha Noi"
+        district="Cau Giay"
+        company_name="HOSTVN"
+
+        read -r -p "Enter Country code (Ma quoc gia) (Ex: VN): " country
+        read -r -p "Enter City (Thanh pho): " city
+        read -r -p "Enter District (Quan/Huyen): " district
+        read -r -p "Enter Company name (Ten cong ty): " company_name
+
+        if [ ! -d "${SSL_DIR}/${domain}/paid" ]; then
+            mkdir -p "${SSL_DIR}/${domain}/paid"
+        fi
+
+        openssl genrsa -out "${SSL_DIR}/${domain}/paid/key.pem" 4096
+        openssl req -new -key "${SSL_DIR}/${domain}/paid/key.pem" \
+            -out "${SSL_DIR}/${domain}/paid/${domain}.csr" \
+            -subj "/C=${country}/ST=${district}/L=${city}/O=${company_name}/OU=IT Department/CN=${domain}"
+        notify="${GREEN}Tao file CSR thanh cong.${NC}"
+        notify2="${GREEN}De xem noi dung CSR vui long thoat menu va chay lenh sau:${NC} ${RED}cat ${SSL_DIR}/${domain}/paid/${domain}.csr${NC}"
+    fi
+}
+
+_create_crt(){
+    if [ -f "${SSL_DIR}/${domain}/paid/cert.pem" ]; then
+        while true; do
+            read -r -p "Ban co muon xoa chung chi cu khong (y/n)? " prompt_delete_old_crt
+            echo
+            if [[ "${prompt_delete_old_crt}" =~ ^([yY])$ || "${prompt_delete_old_crt}" =~ ^([nN])$ ]]; then
+                break
+            else
+                printf "%s\n" "${RED}Lua chon cua ban khong chinh xac. Vui long nhap lai.${NC}"
+            fi
+        done
+    fi
+
+    if [[ "${prompt_delete_old_crt}" =~ ^([nN])$ ]]; then
+        notify="${RED}Huy thao tac.${NC}"
+    else
+        printf "%s\n" "${GREEN}Copy va dan noi dung chung chi SSL (bao gom ca -----BEGIN CERTIFICATE----- va -----END CERTIFICATE-----):${NC}"
+        printf "%s\n" "${RED}Nhan Enter de ket thuc:${NC}"
+        
+        cert_content=""
+        while IFS= read -r line; do
+            if [ -z "$line" ]; then
+                break
+            fi
+            cert_content="$cert_content$line\n"
+        done
+
+        if [ -n "$cert_content" ]; then
+            if [ ! -d "${SSL_DIR}/${domain}/paid" ]; then
+                mkdir -p "${SSL_DIR}/${domain}/paid"
+            fi
+            printf "%b" "$cert_content" > "${SSL_DIR}/${domain}/paid/cert.pem"
+            
+            printf "%s\n" "${GREEN}Copy va dan noi dung CA Bundle (neu co):${NC}"
+            printf "%s\n" "${RED}Nhan Enter de ket thuc:${NC}"
+            
+            ca_content=""
+            while IFS= read -r line; do
+                if [ -z "$line" ]; then
+                    break
+                fi
+                ca_content="$ca_content$line\n"
+            done
+
+            if [ -n "$ca_content" ]; then
+                printf "%b" "$ca_content" > "${SSL_DIR}/${domain}/paid/ca.pem"
+                cat "${SSL_DIR}/${domain}/paid/cert.pem" "${SSL_DIR}/${domain}/paid/ca.pem" > "${SSL_DIR}/${domain}/paid/fullchain.pem"
+            else
+                cp "${SSL_DIR}/${domain}/paid/cert.pem" "${SSL_DIR}/${domain}/paid/fullchain.pem"
+            fi
+            
+            notify="${GREEN}Tao chung chi SSL thanh cong.${NC}"
+        else
+            notify="${RED}Khong co noi dung chung chi nao duoc nhap.${NC}"
+        fi
+    fi
+}
+
+_create_key(){
+    if [ -f "${SSL_DIR}/${domain}/paid/private.key" ]; then
+        while true; do
+            read -r -p "Ban co muon xoa private key cu khong (y/n)? " prompt_delete_old_key
+            echo
+            if [[ "${prompt_delete_old_key}" =~ ^([yY])$ || "${prompt_delete_old_key}" =~ ^([nN])$ ]]; then
+                break
+            else
+                printf "%s\n" "${RED}Lua chon cua ban khong chinh xac. Vui long nhap lai.${NC}"
+            fi
+        done
+    fi
+
+    if [[ "${prompt_delete_old_key}" =~ ^([nN])$ ]]; then
+        notify="${RED}Huy thao tac.${NC}"
+    else
+        printf "%s\n" "${GREEN}Copy va dan noi dung Private Key (bao gom ca -----BEGIN PRIVATE KEY----- va -----END PRIVATE KEY-----):${NC}"
+        printf "%s\n" "${RED}Nhan Enter de ket thuc:${NC}"
+        
+        key_content=""
+        while IFS= read -r line; do
+            if [ -z "$line" ]; then
+                break
+            fi
+            key_content="$key_content$line\n"
+        done
+
+        if [ -n "$key_content" ]; then
+            if [ ! -d "${SSL_DIR}/${domain}/paid" ]; then
+                mkdir -p "${SSL_DIR}/${domain}/paid"
+            fi
+            printf "%b" "$key_content" > "${SSL_DIR}/${domain}/paid/private.key"
+            chmod 600 "${SSL_DIR}/${domain}/paid/private.key"
+            notify="${GREEN}Tao private key thanh cong.${NC}"
+        else
+            notify="${RED}Khong co noi dung private key nao duoc nhap.${NC}"
+        fi
+    fi
+}
+
+_remove_ssl(){
+    if [ -d "${SSL_DIR}/${domain}/paid" ]; then
+        while true; do
+            read -r -p "Ban co chac chan muon xoa SSL cua domain ${domain} khong (y/n)? " confirm_remove
+            echo
+            if [[ "${confirm_remove}" =~ ^([yY])$ || "${confirm_remove}" =~ ^([nN])$ ]]; then
+                break
+            else
+                printf "%s\n" "${RED}Lua chon cua ban khong chinh xac. Vui long nhap lai.${NC}"
+            fi
+        done
+
+        if [[ "${confirm_remove}" =~ ^([yY])$ ]]; then
+            rm -rf "${SSL_DIR}/${domain}/paid"
+            
+            # Remove SSL config from nginx
+            if [ -f "/etc/nginx/conf.d/${domain}.conf" ]; then
+                sed -i '/ssl_certificate/d' "/etc/nginx/conf.d/${domain}.conf"
+                sed -i '/ssl_certificate_key/d' "/etc/nginx/conf.d/${domain}.conf"
+                sed -i 's/443 ssl http2/80/g' "/etc/nginx/conf.d/${domain}.conf"
+                sed -i '/ssl_/d' "/etc/nginx/conf.d/${domain}.conf"
+                systemctl reload nginx
+            fi
+            
+            notify="${GREEN}Xoa SSL thanh cong.${NC}"
+        else
+            notify="${RED}Huy thao tac.${NC}"
+        fi
+    else
+        notify="${RED}Domain ${domain} chua co SSL paid.${NC}"
+    fi
+}
+
+action=""
+notify=""
+notify2=""
+
+select_domain
+if [[ -z "${domain}" && -z "${ALERT}" ]]; then
+    clear
+    printf "%s\n" "${RED}Ban da chon huy thao tac.${NC}"
+else
+    if [ -z "${ALERT}" ]; then
+        _select_ssl_action
+        
+        if [ "${action}" == "create_csr" ]; then
+            _create_csr
+        elif [ "${action}" == "create_crt" ]; then
+            _create_crt
+        elif [ "${action}" == "create_key" ]; then
+            _create_key
+        elif [ "${action}" == "remove_ssl" ]; then
+            _remove_ssl
+        else
+            notify="${RED}Huy thao tac.${NC}"
+        fi
+        
+        clear
+        printf "%s\n" "${notify}"
+        if [ -n "${notify2}" ]; then
+            printf "%s\n" "${notify2}"
+        fi
+    else
+        clear
+        printf "%s\n" "${ALERT}"
+    fi
+fi
+
+ssl_menu

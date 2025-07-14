@@ -1,0 +1,155 @@
+#!/bin/bash
+
+######################################################################
+#           Auto Install & Optimize LEMP Stack on CentOS            #
+#                                                                    #
+#                Author: HOSTVN Technical Team                       #
+#                  Website: https://hostvn.vn                        #
+#                                                                    #
+#              Please do not remove copyright. Thank!                #
+#  Please do not copy under any circumstance for commercial reason!  #
+######################################################################
+
+source /var/hostvn/menu/validate/rule
+source /var/hostvn/menu/helpers/function
+
+printf "%s========================================%s\n" "${GREEN}" "${NC}"
+printf "%s        Xoa Telegram Notification      %s\n" "${GREEN}" "${NC}"
+printf "%s========================================%s\n" "${GREEN}" "${NC}"
+echo
+
+_select_delete_option() {
+    echo "Lua chon loai thong bao muon xoa:"
+    PS3="Nhap lua chon cua ban [1-5]: "
+    options=("SSH Notify" "Service Notify" "Disk Notify" "Tat ca" "Cancel")
+    select opt in "${options[@]}"; do
+        case $opt in
+            "SSH Notify")
+                delete_type="ssh"
+                break
+                ;;
+            "Service Notify")
+                delete_type="service"
+                break
+                ;;
+            "Disk Notify")
+                delete_type="disk"
+                break
+                ;;
+            "Tat ca")
+                delete_type="all"
+                break
+                ;;
+            "Cancel")
+                delete_type="cancel"
+                break
+                ;;
+            *) printf "%s\n" "${RED}Lua chon khong hop le. Vui long chon lai.${NC}";;
+        esac
+    done
+}
+
+_confirm_delete() {
+    while true; do
+        read -r -p "Ban co chac chan muon xoa ${1} khong? (y/n): " confirm
+        case $confirm in
+            [Yy]* ) return 0;;
+            [Nn]* ) return 1;;
+            * ) printf "%s\n" "${RED}Vui long nhap y hoac n.${NC}";;
+        esac
+    done
+}
+
+_delete_ssh_notify() {
+    if [ -f "/etc/profile.d/ssh-notify.sh" ]; then
+        if _confirm_delete "SSH Notify"; then
+            rm -f /etc/profile.d/ssh-notify.sh
+            ALERT="${GREEN}Xoa SSH Notify thanh cong.${NC}"
+        else
+            ALERT="${RED}Huy xoa SSH Notify.${NC}"
+        fi
+    else
+        ALERT="${RED}SSH Notify chua duoc cau hinh.${NC}"
+    fi
+}
+
+_delete_service_notify() {
+    check_service_notify=$(crontab -l 2>/dev/null | grep -c "servicesNotify.sh")
+    if [ "${check_service_notify}" -ge 1 ]; then
+        if _confirm_delete "Service Notify"; then
+            crontab -l | grep -v "servicesNotify.sh" | crontab -
+            rm -f /var/hostvn/telegram/servicesNotify.sh
+            ALERT="${GREEN}Xoa Service Notify thanh cong.${NC}"
+        else
+            ALERT="${RED}Huy xoa Service Notify.${NC}"
+        fi
+    else
+        ALERT="${RED}Service Notify chua duoc cau hinh.${NC}"
+    fi
+}
+
+_delete_disk_notify() {
+    check_disk_notify=$(crontab -l 2>/dev/null | grep -c "diskNotify.sh")
+    if [ "${check_disk_notify}" -ge 1 ]; then
+        if _confirm_delete "Disk Notify"; then
+            crontab -l | grep -v "diskNotify.sh" | crontab -
+            rm -f /var/hostvn/telegram/diskNotify.sh
+            ALERT="${GREEN}Xoa Disk Notify thanh cong.${NC}"
+        else
+            ALERT="${RED}Huy xoa Disk Notify.${NC}"
+        fi
+    else
+        ALERT="${RED}Disk Notify chua duoc cau hinh.${NC}"
+    fi
+}
+
+_delete_all_notify() {
+    if _confirm_delete "tat ca telegram notifications"; then
+        # Remove SSH notify
+        rm -f /etc/profile.d/ssh-notify.sh
+        
+        # Remove service and disk notify cronjobs and files
+        crontab -l 2>/dev/null | grep -v "servicesNotify.sh" | grep -v "diskNotify.sh" | crontab -
+        rm -f /var/hostvn/telegram/servicesNotify.sh
+        rm -f /var/hostvn/telegram/diskNotify.sh
+        
+        # Remove telegram directory if empty
+        if [ -d "/var/hostvn/telegram" ] && [ -z "$(ls -A /var/hostvn/telegram)" ]; then
+            rm -rf /var/hostvn/telegram
+        fi
+        
+        ALERT="${GREEN}Xoa tat ca telegram notifications thanh cong.${NC}"
+    else
+        ALERT="${RED}Huy xoa tat ca telegram notifications.${NC}"
+    fi
+}
+
+_run() {
+    _select_delete_option
+    
+    case $delete_type in
+        "ssh")
+            _delete_ssh_notify
+            ;;
+        "service")
+            _delete_service_notify
+            ;;
+        "disk")
+            _delete_disk_notify
+            ;;
+        "all")
+            _delete_all_notify
+            ;;
+        "cancel")
+            ALERT="${RED}Huy thao tac.${NC}"
+            ;;
+    esac
+}
+
+delete_type=""
+ALERT=""
+
+_run
+clear
+printf "%s\n" "${ALERT}"
+menu_telegram

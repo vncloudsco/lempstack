@@ -1,0 +1,110 @@
+#!/bin/bash
+
+######################################################################
+#           Auto Install & Optimize LEMP Stack on CentOS            #
+#                                                                    #
+#                Author: HOSTVN Technical Team                       #
+#                  Website: https://hostvn.vn                        #
+#                                                                    #
+#              Please do not remove copyright. Thank!                #
+#  Please do not copy under any circumstance for commercial reason!  #
+######################################################################
+
+source /var/hostvn/menu/validate/rule
+source /var/hostvn/menu/helpers/function
+
+printf "%s=========================%s\n" "${GREEN}" "${NC}"
+printf "%sGo bo SSL - Let's Encrypt%s\n" "${GREEN}" "${NC}"
+printf "%s=========================%s\n" "${GREEN}" "${NC}"
+echo
+
+_select_ssl_le_website(){
+    domain=""
+    if [[ "$(ls -A "${USER_DIR}")" ]]; then
+        le_domains=()
+        echo "${LIST_DOMAIN}"
+        cd "${USER_DIR}" || exit
+        for le_entry in .*.conf; do
+            domain=${le_entry/./}
+            domain=${domain//.conf/}
+            check_ssl_config=$(grep -w "ssl_certificate" "${VHOST_DIR}/${domain}.conf")
+            if [[ -f "${SSL_DIR}/${domain}/key.pem" && -f "${SSL_DIR}/${domain}/cert.pem" && -s "${SSL_DIR}/${domain}/key.pem" && -s "${SSL_DIR}/${domain}/cert.pem" && -n "${check_ssl_config}" ]]; then
+                le_domains+=("${domain}")
+            fi
+        done
+        if [ ${#le_domains[@]} -eq 0 ]; then
+            ALERT=$(printf "%s\n" "${RED}Chua co website nao duoc cai dat SSL.${NC}")
+        else
+            echo "Lua chon website"
+            PS3="${INPUT_SELECT} [0 = Thoat]: "
+            select le_opt in "${le_domains[@]}"; do
+                domain=$le_opt
+                break
+            done
+        fi
+    else
+        ALERT=$(printf "%s\n" "${RED}${EMPTY_DOMAIN}${NC}")
+    fi
+}
+
+_confirm_remove(){
+    while true; do
+        read -r -p "Ban muon go bo SSL cho domain ${domain} ? (y/n) " prompt_remove_ssl
+        echo
+        if [[ "${prompt_remove_ssl}" =~ ^([yY])$ || "${prompt_remove_ssl}" =~ ^([nN])$ ]]; then
+            break
+        else
+            printf "%s\n" "${RED}Gia tri khong chinh xac. Vui long nhap lai.${NC}"
+        fi
+    done
+}
+
+_remove_ssl_cert(){
+    rm -rf "${SSL_DIR}"/"${domain}"/key.pem
+    rm -rf "${SSL_DIR}"/"${domain}"/cert.pem
+    rm -rf /root/.acme.sh/"${domain}"
+    sed -i '/https.conf/d' "${VHOST_DIR}"/"${domain}".conf
+    sed -i '/ssl_certificate/d' "${VHOST_DIR}"/"${domain}".conf
+    sed -i '/ssl_certificate_key/d' "${VHOST_DIR}"/"${domain}".conf
+    sed -i "/listen 443/a ssl_certificate /etc/nginx/ssl/server/server.crt;" "${VHOST_DIR}"/"${domain}".conf
+    sed -i "/listen 443/a ssl_certificate_key /etc/nginx/ssl/server/server.key;" "${VHOST_DIR}"/"${domain}".conf
+    sed -i "/listen 443/a return 404;" "${VHOST_DIR}"/"${domain}".conf
+
+    if nginx -t; then
+        restart_service
+        clear
+        printf "%s\n" "${GREEN}Go bo SSL thanh cong.${NC}"
+    else
+        nginx -t
+        printf "%s\n" "${RED}Co loi xay ra khi cap nhat cau hinh Nginx.${NC}"
+        printf "%s\n" "${RED}Vui long kiem tra lai cau hinh.${NC}"
+    fi
+}
+
+_run(){
+    _select_ssl_le_website
+    if [[ -z "${domain}" && -z "${ALERT}" ]]; then
+        clear
+        printf "%s\n" "${RED}Ban da chon huy thao tac.${NC}"
+    else
+        if [ -z "${ALERT}" ]; then
+            _confirm_remove
+            if [[ "${prompt_remove_ssl}" =~ ^([yY])$ ]]; then
+                _remove_ssl_cert
+            else
+                clear
+                printf "%s\n" "${RED}Ban da chon huy thao tac.${NC}"
+            fi
+        else
+            clear
+            printf "%s\n" "${ALERT}"
+        fi
+    fi
+}
+
+ALERT=""
+domain=""
+prompt_remove_ssl=""
+
+_run
+ssl_le

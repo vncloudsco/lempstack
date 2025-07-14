@@ -1,0 +1,71 @@
+#!/bin/bash
+
+######################################################################
+#           Auto Install & Optimize LEMP Stack on CentOS            #
+#                                                                    #
+#                Author: HOSTVN Technical Team                       #
+#                  Website: https://hostvn.vn                        #
+#                                                                    #
+#              Please do not remove copyright. Thank!                #
+#  Please do not copy under any circumstance for commercial reason!  #
+######################################################################
+
+source /var/hostvn/menu/validate/rule
+source /var/hostvn/menu/helpers/function
+
+_create_ssh_notify_file(){
+  cat >> "/etc/profile.d/ssh-notify.sh" << END
+#!/bin/sh
+
+USERID="$TELEGRAM_ID"
+KEY="$TELEGRAM_TOKEN"
+
+TIMEOUT="10"
+URL="https://api.telegram.org/bot\$KEY/sendMessage"
+DATE_EXEC="\$(date "+%d %b %Y %H:%M")"
+TMPFILE='/tmp/ipinfo-\$DATE_EXEC.txt'
+
+if [ -n "\$SSH_CLIENT" ]; then
+  IP=\$(echo \$SSH_CLIENT | awk '{print \$1}')
+  PORT=\$(echo \$SSH_CLIENT | awk '{print \$3}')
+  HOSTNAME=\$(hostname -f)
+  IPADDR=\$(hostname -I | awk '{print \$1}')
+  curl http://ipinfo.io/\$IP -s -o \$TMPFILE
+  CITY=\$(cat \$TMPFILE | jq '.city' | sed 's/"//g')
+  REGION=\$(cat \$TMPFILE | jq '.region' | sed 's/"//g')
+  COUNTRY=\$(cat \$TMPFILE | jq '.country' | sed 's/"//g')
+  ORG=\$(cat \$TMPFILE | jq '.org' | sed 's/"//g')
+  TEXT="\$DATE_EXEC: \${USER} logged in to \$HOSTNAME (\$IPADDR) from \$IP - \$ORG - \$CITY, \$REGION, \$COUNTRY on port \$PORT"
+  curl -s --max-time \$TIMEOUT -d "chat_id=\$USERID&disable_web_page_preview=1&text=\$TEXT" \$URL > /dev/null
+  rm \$TMPFILE
+fi
+END
+}
+
+_run(){
+    if [ -f /etc/profile.d/ssh-notify.sh ]; then
+        ALERT=$(printf "%s" "${RED}Ban da tao SSH Notify roi.${NC}")
+    else
+        read -r -p "Nhap vao Telegram Chat ID: " TELEGRAM_ID
+        read -r -p "Nhap vao Telegram Token: " TELEGRAM_TOKEN
+
+        if [ -z "$TELEGRAM_ID" ]; then
+            ALERT=$(printf "%s" "${RED}Ban chua nhap Telegram ID.${NC}")
+        elif [ -z "$TELEGRAM_TOKEN" ]; then
+            ALERT=$(printf "%s" "${RED}Ban chua nhap Telegram Token.${NC}")
+        else
+            _create_ssh_notify_file
+            chmod +x /etc/profile.d/ssh-notify.sh
+            ALERT=$(printf "%s" "${GREEN}Tao SSH Notify thanh cong.${NC}")
+        fi
+    fi
+}
+
+TELEGRAM_ID=""
+TELEGRAM_TOKEN=""
+ALERT=""
+
+_run
+clear
+printf "%s\n" "${ALERT}"
+menu_telegram

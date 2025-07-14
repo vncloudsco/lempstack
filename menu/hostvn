@@ -43,8 +43,9 @@ do
     printf "%s10. Quan ly VPS %s\n" "${GREEN}" "${NC}"
     printf "%s11. Xem thong tin tai khoan%s\n" "${GREEN}" "${NC}"
     printf "%s12. Quan ly Cronjob/Auto Backup%s\n" "${GREEN}" "${NC}"
-    printf "%s13. Cong cu%s\n" "${GREEN}" "${NC}"
-    printf "%s14. Cap nhat HOSTVN Scripts %s\n" "${GREEN}" "${NC}"
+    printf "%s13. Quan ly Telegram Notifications%s\n" "${GREEN}" "${NC}"
+    printf "%s14. Cong cu%s\n" "${GREEN}" "${NC}"
+    printf "%s15. Cap nhat HOSTVN Scripts %s\n" "${GREEN}" "${NC}"
     printf "%s==================================================%s\n" "${GREEN}" "${NC}"
     read -r -p " Nhap vao lua chon cua ban [0 = Thoat] " CHOICE
     if [ -z "${CHOICE}" ]
@@ -65,8 +66,9 @@ do
         10) clear; menu_vps;;
         11) clear; menu_account ;;
         12) clear; menu_cronjob ;;
-        13) clear; menu_tools ;;
-        14) update_script;;
+        13) clear; menu_telegram ;;
+        14) clear; menu_tools ;;
+        15) update_script;;
         0) clear; printf "%s\n" "${GREEN}Bye Bye... Cam on ban da su dung ${AUTHOR} Script${NC}";;
         *) clear; printf "%s\n" "${GREEN}Lua chon cua ban khong chinh xac. Vui long chon lai.${NC}";;
     esac

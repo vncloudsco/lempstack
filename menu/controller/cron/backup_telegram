@@ -1,0 +1,224 @@
+#!/bin/bash
+
+######################################################################
+#           Auto Install & Optimize LEMP Stack on CentOS 7, 8        #
+#                                                                    #
+#                Author: Sanvv - HOSTVN Technical                    #
+#                  Website: https://hostvn.vn                        #
+#                                                                    #
+#              Please do not remove copyright. Thank!                #
+#  Please do not copy under any circumstance for commercial reason!  #
+######################################################################
+
+source /var/hostvn/menu/validate/rule
+source /var/hostvn/menu/helpers/function
+
+_select_type() {
+    echo "Lua chon kieu backup Telegram?"
+    PS3='Nhap lua chon cua ban (1-3): '
+    options=("Backup theo ten mien" "Backup toan bo ten mien" "Huy tao cronjob")
+    select opt in "${options[@]}"; do
+        case $opt in
+        "Backup theo ten mien")
+            type="one"
+            break
+            ;;
+        "Backup toan bo ten mien")
+            type="all"
+            break
+            ;;
+        "Huy tao cronjob")
+            type="0"
+            break
+            ;;
+        *) printf "${RED}%s${NC}\n" "Lua chon cua ban khong chinh xac. Vui long chon lai." ;;
+        esac
+    done
+}
+
+_select_time() {
+    echo "Lua chon thoi gian backup?"
+    PS3='Nhap lua chon cua ban (1-5): '
+    options=("Backup 1 lan/ngay" "Backup 1 lan/tuan" "Backup 1 lan/thang" "Backup 1 lan/nam" "Huy tao cronjob")
+    select opt in "${options[@]}"; do
+        case $opt in
+        "Backup 1 lan/ngay")
+            time="@midnight"
+            break
+            ;;
+        "Backup 1 lan/tuan")
+            time="@weekly"
+            break
+            ;;
+        "Backup 1 lan/thang")
+            time="@monthly"
+            break
+            ;;
+        "Backup 1 lan/nam")
+            time="@yearly"
+            break
+            ;;
+        "Huy tao cronjob")
+            time="0"
+            break
+            ;;
+        *) printf "${RED}%s${NC}\n" "Lua chon cua ban khong chinh xac. Vui long chon lai." ;;
+        esac
+    done
+}
+
+_input_backup_num() {
+    echo "Nhap so ban backup ban muon luu tru: "
+    echo "VD: Backup hang ngay va nhap 14 - Se luu backup 14 ngay gan nhat - Cac ban cu hon se bi xoa"
+    echo "VD: Backup hang tuan va nhap 3 - Se luu backup 3 tuan gan nhat - Cac ban cu hon se bi xoa"
+    while true; do
+        read -r -p "Nhap vao lua chon cua ban [0 = Thoat]:" backup_num
+        echo
+        if [[ "${backup_num}" =~ ^[0-9]+$ ]]; then
+            break
+        else
+            printf "%s\n" "${RED}Gia tri khong chinh xac. Vui long nhap lai.${NC}"
+        fi
+    done
+}
+
+_set_backup_time() {
+    _input_backup_num
+    if [[ "${time}" == "@weekly" ]]; then
+        backup_num=$((backup_num * 7))
+    elif [[ "${time}" == "@monthly" ]]; then
+        backup_num=$((backup_num * 30))
+    elif [[ "${time}" == "@yearly" ]]; then
+        backup_num=$((backup_num * 365))
+    else
+        backup_num="${backup_num}"
+    fi
+
+    sed -i '/backup_num=/d' "${FILE_INFO}"
+    echo "backup_num=${backup_num}" >>"${FILE_INFO}"
+}
+
+_create_cron_backup_all() {
+    cron_all_exists=$(crontab -l | grep -w 'backup_telegram_all')
+    if [ -z "${cron_all_exists}" ]; then
+        crontab -l >backup_telegram
+        echo "${time} sh /var/hostvn/menu/cronjob/backup_telegram_all.sh >/dev/null 2>&1" >>backup_telegram
+        crontab backup_telegram
+        rm -rf backup_telegram
+    fi
+}
+
+_create_cron_backup_one() {
+    cron_one_exists=$(crontab -l | grep -w 'backup_telegram_one')
+    if [ -z "${cron_one_exists}" ]; then
+        crontab -l >backup_telegram
+        echo "${time} sh /var/hostvn/menu/cronjob/backup_telegram_one.sh >/dev/null 2>&1" >>backup_telegram
+        crontab backup_telegram
+        rm -rf backup_telegram
+    fi
+}
+
+_backup_one() {
+    select_domain
+    if [[ -z "${domain}" && -z "${ALERT}" ]]; then
+        clear
+        printf "%s\n" "${RED}Ban da chon huy thao tac.${NC}"
+    else
+        if [ -z "${ALERT}" ]; then
+            _select_time
+            if [ "${time}" == "0" ]; then
+                clear
+                printf "%s\n" "${RED}Huy tao cronjob.${NC}"
+            else
+                _set_backup_time
+                if [ "${backup_num}" == "0" ]; then
+                    clear
+                    printf "%s\n" "${RED}Huy tao cronjob.${NC}"
+                else
+                    if [ ! -d "${BASH_DIR}/telegram" ]; then
+                        mkdir -p "${BASH_DIR}/telegram"
+                    fi
+                    if [ ! -f "${BASH_DIR}/telegram/${domain}" ]; then
+                        touch "${BASH_DIR}"/telegram/"${domain}"
+                    fi
+                    _create_cron_backup_one
+                    clear
+                    printf "%s\n" "${GREEN}Tao cronjob thanh cong.${NC}"
+                    echo ""
+                fi
+            fi
+        else
+            clear
+            printf "%s\n" "${ALERT}"
+        fi
+    fi
+}
+
+_backup_all() {
+    _select_time
+    if [ "${time}" == "0" ]; then
+        clear
+        printf "%s\n" "${RED}Huy tao cronjob.${NC}"
+    else
+        _set_backup_time
+        if [ "${backup_num}" == "0" ]; then
+            clear
+            printf "%s\n" "${RED}Huy tao cronjob.${NC}"
+        else
+            _create_cron_backup_all
+            clear
+            printf "%s\n" "${GREEN}Tao cronjob thanh cong.${NC}"
+            echo ""
+        fi
+    fi
+}
+
+_check_telegram_config() {
+    if [ ! -f "/var/hostvn/telegram/.telegram_backup_config" ]; then
+        return 1
+    fi
+    
+    TELEGRAM_BOT_TOKEN=$(grep -w "telegram_bot_token" "/var/hostvn/telegram/.telegram_backup_config" | cut -f2 -d'=')
+    TELEGRAM_CHAT_ID=$(grep -w "telegram_chat_id" "/var/hostvn/telegram/.telegram_backup_config" | cut -f2 -d'=')
+    
+    if [[ -z "${TELEGRAM_BOT_TOKEN}" || -z "${TELEGRAM_CHAT_ID}" ]]; then
+        return 1
+    fi
+    
+    # Test if curl is available
+    if ! command -v curl &> /dev/null; then
+        printf "%s\n" "${RED}curl is not installed. Please install curl first.${NC}"
+        return 1
+    fi
+    
+    return 0
+}
+
+_run() {
+    _select_type
+    if [ "${type}" == "0" ]; then
+        clear
+        printf "%s\n" "${RED}Huy tao cronjob.${NC}"
+    else
+        if [ "${type}" == "one" ]; then
+            _backup_one
+        else
+            _backup_all
+        fi
+    fi
+}
+
+ALERT=""
+time=""
+backup_num=""
+domain=""
+type=""
+
+if _check_telegram_config; then
+    _run
+else
+    clear
+    printf "%s\n" "${RED}Ban chua cau hinh Telegram Backup. Vui long cau hinh truoc.${NC}"
+fi
+
+menu_cronjob

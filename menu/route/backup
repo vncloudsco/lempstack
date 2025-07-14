@@ -22,7 +22,8 @@ do
     printf "%s2. Khoi phuc du lieu (Local)%s\n" "${GREEN}" "${NC}"
     printf "%s3. Xoa ban sao luu (Local)%s\n" "${GREEN}" "${NC}"
     printf "%s4. Khoi phuc/Sao luu voi Google Drive%s\n" "${GREEN}" "${NC}"
-    printf "%s5. Thiet lap backup tu dong%s\n" "${GREEN}" "${NC}"
+    printf "%s5. Connect Telegram%s\n" "${GREEN}" "${NC}"
+    printf "%s6. Thiet lap backup tu dong%s\n" "${GREEN}" "${NC}"
     printf "%s ====================================%s\n" "${GREEN}" "${NC}"
     read -r -p " Nhap vao lua chon cua ban [0 = Thoat] " CHOICE
     if [ -z "${CHOICE}" ]
@@ -35,7 +36,8 @@ do
         2) clear; select_restore ;;
         3) clear; delete_backup ;;
         4) clear; menu_ggdrive ;;
-        5) clear; menu_cronjob ;;
+        5) clear; connect_telegram ;;
+        6) clear; menu_cronjob ;;
         0) clear; menu_primary ;;
         *) clear; printf "%s\n" "${RED}Lua chon cua ban khong chinh xac. Vui long chon lai.${NC}";;
     esac

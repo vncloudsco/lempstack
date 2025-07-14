@@ -62,6 +62,10 @@ menu_vps(){
     . /var/hostvn/menu/route/vps_manage
 }
 
+menu_telegram(){
+    . /var/hostvn/menu/route/notify
+}
+
 menu_ssl(){
     . /var/hostvn/menu/route/ssl_manage
 }
@@ -544,6 +548,14 @@ cron_backup_gg(){
 
 cron_destroy(){
     . /var/hostvn/menu/controller/cron/destroy_cron
+}
+
+connect_telegram(){
+    . /var/hostvn/menu/controller/backup/connect_telegram
+}
+
+cron_backup_telegram(){
+    . /var/hostvn/menu/controller/cron/backup_telegram
 }
 
 change_all_parameter(){
