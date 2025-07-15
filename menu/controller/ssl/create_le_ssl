@@ -542,7 +542,9 @@ _fix_zerossl_account() {
             printf "%s\n" "${YELLOW}Can dang ky tai khoan ZeroSSL voi email...${NC}"
             read -r -p "Nhap email hop le de dang ky ZeroSSL: " zerossl_email
             if [ -z "${zerossl_email}" ]; then
-                zerossl_email="admin@$(hostname)"
+                # random text
+                printf "%s\n" "${YELLOW}Khong nhap email, su dung email mac dinh...${NC}"
+                zerossl_email="$(openssl rand -hex 8)@tinycp.me"
             fi
             
             # Register account with ZeroSSL
