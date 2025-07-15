@@ -3845,17 +3845,23 @@ install_wpcli_packages(){
 # Create menu
 ############################################
 add_menu(){
-    cd_dir "${BASH_DIR}"
-    wget "${EXT_LINK}"/menu.tar.gz  > /dev/null
-    tar -xvf menu.tar.gz && rm -rf menu.tar.gz  > /dev/null
-    mkdir -p "${BASH_DIR}"/users
-    mkdir -p /var/log/hostvn
-    mkdir -p /var/hostvn/wpcron
+    cd_dir "${BASH_DIR}" || { echo "Failed to change to ${BASH_DIR}"; exit 1; }
+
+    # Download and extract menu files
+    wget -q "${EXT_LINK}/menu.tar.gz" || { echo "Failed to download menu files"; exit 1; }
+    tar -xf menu.tar.gz && rm -f menu.tar.gz
+
+    # Create necessary directories in one command
+    mkdir -p "${BASH_DIR}"/users /var/log/hostvn /var/hostvn/wpcron
+
+    # Set appropriate permissions
     chmod 711 menu users wpcron
-    chmod +x ./menu/* ./menu/*/* ./menu/*/*/* ./menu/*/*/*/* > /dev/null
-    dos2unix ./menu/* > /dev/null
-    dos2unix ./menu/*/* > /dev/null
-    dos2unix ./menu/*/*/* > /dev/null
+
+    # Make all scripts executable in one operation
+    find ./menu -type f -exec chmod +x {} \; 2>/dev/null
+
+    # Convert DOS to UNIX line endings recursively
+    find ./menu -type f -exec dos2unix {} \; 2>/dev/null
 
     mv "${BASH_DIR}"/menu/hostvn /usr/bin/hostvn && chmod +x /usr/bin/hostvn
 

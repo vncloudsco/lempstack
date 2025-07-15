@@ -102,12 +102,20 @@ fi
 
 echo ""
 
-# Test 4: Kiểm tra syntax của SSL files
-echo "🔍 TEST 4: Kiểm tra syntax của SSL files..."
+# Test 4: Kiểm tra syntax và sourcing của SSL files
+echo "🔍 TEST 4: Kiểm tra syntax và sourcing của SSL files..."
 
 for file in "${SSL_FILES[@]}"; do
+    # Check syntax
     if bash -n "/var/hostvn/menu/controller/ssl/${file}" 2>/dev/null; then
         echo "   ✅ ${file} - SYNTAX OK"
+        
+        # Check if it sources menu helpers
+        if grep -q "source.*helpers/menu" "/var/hostvn/menu/controller/ssl/${file}" 2>/dev/null; then
+            echo "   ✅ ${file} - SOURCES menu helpers"
+        else
+            echo "   ⚠️  ${file} - MISSING menu helpers source"
+        fi
     else
         echo "   ❌ ${file} - SYNTAX ERROR"
     fi

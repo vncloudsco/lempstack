@@ -12,6 +12,7 @@
 
 source /var/hostvn/menu/validate/rule
 source /var/hostvn/menu/helpers/function
+source /var/hostvn/menu/helpers/menu
 
 printf "%s========================%s\n" "${GREEN}" "${NC}"
 printf "%s          SSL           %s\n" "${GREEN}" "${NC}"
