@@ -114,4 +114,4 @@ else
     printf "%s\n" "${RED}Huy thao tac.${NC}"
 fi
 
-ssl_menu
+menu_ssl

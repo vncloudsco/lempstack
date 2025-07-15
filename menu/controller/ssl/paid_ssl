@@ -258,4 +258,4 @@ else
     fi
 fi
 
-ssl_menu
+menu_ssl
