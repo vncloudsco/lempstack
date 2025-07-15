@@ -453,13 +453,72 @@ _run() {
                     _edit_vhost
                     sleep 2
                     if nginx -t; then
-                        restart_service
-                        clear
-                        echo
-                        printf "%s\n" "${GREEN}Cau hinh SSL thanh cong.${NC}"
-                        printf "%s\n" "${GREEN}Domain: ${domain}${NC}"
-                        printf "%s\n" "${GREEN}SSL files: ${SSL_DIR}/${domain}/cert.pem${NC}"
-                        echo
+                        # Tự động tạo file cấu hình SSL đầy đủ cho nginx
+                        if [ ! -d "${NGINX_CONF_DIR}/extra" ]; then
+                            mkdir -p "${NGINX_CONF_DIR}/extra"
+                        fi
+                        cat > "${NGINX_CONF_DIR}/extra/https.conf" <<EOF
+# Auto-generated SSL config for nginx
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers on;
+ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-CHACHA20-POLY1305';
+ssl_session_cache shared:SSL:10m;
+ssl_session_timeout 10m;
+ssl_session_tickets off;
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+ssl_stapling on;
+ssl_stapling_verify on;
+resolver 8.8.8.8 8.8.4.4 valid=300s;
+resolver_timeout 5s;
+# ssl_trusted_certificate ${SSL_DIR}/${domain}/cert.pem;
+EOF
+
+                        # Kiểm tra và chèn block server HTTPS vào vhost nếu chưa có
+                        if ! grep -q 'listen 443' "${VHOST_DIR}/${domain}.conf"; then
+                            cat <<EOB >> "${VHOST_DIR}/${domain}.conf"
+
+server {
+    listen 443 ssl http2;
+    server_name ${domain} www.${domain};
+    root /home/${domain}/public_html;
+    index index.php index.html index.htm;
+    access_log /var/log/nginx/${domain}_ssl.access.log;
+    error_log /var/log/nginx/${domain}_ssl.error.log;
+    include ${NGINX_CONF_DIR}/extra/https.conf;
+    ssl_certificate ${SSL_DIR}/${domain}/cert.pem;
+    ssl_certificate_key ${SSL_DIR}/${domain}/key.pem;
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass unix:/run/php-fpm/www.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+    # Các cấu hình bổ sung khác nếu cần
+}
+EOB
+                        fi
+
+                        # Xóa include https.conf khỏi block listen 80 nếu có
+                        sed -i '/include .*https.conf/d' "${VHOST_DIR}/${domain}.conf"
+
+                        sleep 2
+                        if nginx -t; then
+                            restart_service
+                            clear
+                            echo
+                            printf "%s\n" "${GREEN}Cau hinh SSL thanh cong.${NC}"
+                            printf "%s\n" "${GREEN}Domain: ${domain}${NC}"
+                            printf "%s\n" "${GREEN}SSL files: ${SSL_DIR}/${domain}/cert.pem${NC}"
+                            echo
+                        else
+                            clear
+                            nginx -t
+                            printf "%s\n" "${RED}Loi cau hinh vhost. Vui long kiem tra cau hinh nginx.${NC}"
+                            printf "%s\n" "${RED}Ban co the su dung chuc nang rewrite config de sua chua.${NC}"
+                            echo
+                        fi
                     else
                         clear
                         nginx -t
