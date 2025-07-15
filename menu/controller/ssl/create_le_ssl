@@ -540,7 +540,7 @@ _fix_zerossl_account() {
         zerossl_error=$(grep -i "No EAB credentials found for ZeroSSL" /root/.acme.sh/acme.sh.log 2>/dev/null || echo "")
         if [ -n "${zerossl_error}" ] || [ ! -f "/root/.acme.sh/account.conf" ]; then
             printf "%s\n" "${YELLOW}Can dang ky tai khoan ZeroSSL voi email...${NC}"
-            read -r -p "Nhap email hop le de dang ky ZeroSSL [admin@$(hostname)]: " zerossl_email
+            read -r -p "Nhap email hop le de dang ky ZeroSSL: " zerossl_email
             if [ -z "${zerossl_email}" ]; then
                 zerossl_email="admin@$(hostname)"
             fi
