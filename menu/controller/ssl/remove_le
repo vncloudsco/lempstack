@@ -13,6 +13,7 @@
 source /var/hostvn/menu/validate/rule
 source /var/hostvn/menu/helpers/function
 source /var/hostvn/menu/helpers/menu
+source /var/hostvn/menu/helpers/variable_common
 
 printf "%s=========================%s\n" "${GREEN}" "${NC}"
 printf "%sGo bo SSL - Let's Encrypt%s\n" "${GREEN}" "${NC}"

@@ -13,6 +13,7 @@
 source /var/hostvn/menu/validate/rule
 source /var/hostvn/menu/helpers/function
 source /var/hostvn/menu/helpers/menu
+source /var/hostvn/menu/helpers/variable_common
 
 _select_cf_action() {
     clear
