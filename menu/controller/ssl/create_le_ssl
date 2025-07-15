@@ -20,6 +20,140 @@ printf "%s Cau hinh Let's Encrypt %s\n" "${GREEN}" "${NC}"
 printf "%s========================%s\n" "${GREEN}" "${NC}"
 echo
 
+_debug_ssl_setup() {
+    printf "%s\n" "${YELLOW}Debug thong tin SSL setup:${NC}"
+    printf "%s\n" "Domain: ${domain}"
+    printf "%s\n" "SSL Type: ${ssl_type} (1=Let's Encrypt, 2=Zero SSL)"
+    printf "%s\n" "Domain Type: ${domain_type} (1=Main domain with www, 2=Subdomain)"
+    printf "%s\n" "Method: ${method} (http/cf_api)"
+    printf "%s\n" "SSL Dir: ${SSL_DIR}/${domain}"
+    printf "%s\n" "Vhost Dir: ${VHOST_DIR}/${domain}.conf"
+    echo
+}
+
+_show_ssl_debug_info() {
+    printf "%s\n" "${YELLOW}=== SSL Debug Information ===${NC}"
+    printf "%s\n" "Domain: ${domain}"
+    printf "%s\n" "SSL Type: ${ssl_type} (1=Let's Encrypt, 2=ZeroSSL)"
+    printf "%s\n" "Domain Type: ${domain_type} (1=Main domain with www, 2=Subdomain)"
+    printf "%s\n" "Method: ${method}"
+    
+    printf "%s\n" "${YELLOW}Acme.sh directories:${NC}"
+    if [ -d "/root/.acme.sh/${domain}" ]; then
+        printf "%s\n" "  /root/.acme.sh/${domain}/ exists"
+        ls -la "/root/.acme.sh/${domain}/" 2>/dev/null || echo "    (empty or no permissions)"
+    else
+        printf "%s\n" "  /root/.acme.sh/${domain}/ does not exist"
+    fi
+    
+    if [ -d "/root/.acme.sh/${domain}_ecc" ]; then
+        printf "%s\n" "  /root/.acme.sh/${domain}_ecc/ exists"
+        ls -la "/root/.acme.sh/${domain}_ecc/" 2>/dev/null || echo "    (empty or no permissions)"
+    else
+        printf "%s\n" "  /root/.acme.sh/${domain}_ecc/ does not exist"
+    fi
+    
+    printf "%s\n" "${YELLOW}SSL installation directory:${NC}"
+    if [ -d "${SSL_DIR}/${domain}" ]; then
+        printf "%s\n" "  ${SSL_DIR}/${domain}/ exists"
+        ls -la "${SSL_DIR}/${domain}/" 2>/dev/null || echo "    (empty or no permissions)"
+    else
+        printf "%s\n" "  ${SSL_DIR}/${domain}/ does not exist"
+    fi
+    
+    printf "%s\n" "${YELLOW}Recent acme.sh log (last 20 lines):${NC}"
+    if [ -f "/root/.acme.sh/acme.sh.log" ]; then
+        tail -20 "/root/.acme.sh/acme.sh.log"
+    else
+        printf "%s\n" "  No acme.sh.log found"
+    fi
+    printf "%s\n" "${YELLOW}=== End Debug Information ===${NC}"
+    echo
+}
+
+_check_prerequisites() {
+    local error_count=0
+    
+    # Check if acme.sh is installed
+    if [ ! -f "/root/.acme.sh/acme.sh" ]; then
+        printf "%s\n" "${RED}Loi: acme.sh chua duoc cai dat.${NC}"
+        ((error_count++))
+    fi
+    
+    # Check if domain vhost exists
+    if [ ! -f "${VHOST_DIR}/${domain}.conf" ]; then
+        printf "%s\n" "${RED}Loi: Khong tim thay file cau hinh domain ${VHOST_DIR}/${domain}.conf${NC}"
+        ((error_count++))
+    fi
+    
+    # Check nginx config directory
+    if [ ! -d "${NGINX_CONF_DIR}" ]; then
+        printf "%s\n" "${RED}Loi: Thu muc cau hinh nginx khong ton tai ${NGINX_CONF_DIR}${NC}"
+        ((error_count++))
+    fi
+    
+    # For CloudFlare DNS API method, check if CF credentials exist
+    if [[ "${method}" == "cf_api" ]]; then
+        if [ ! -f "/root/.acme.sh/account.conf" ]; then
+            printf "%s\n" "${RED}Loi: Khong tim thay file cau hinh account.conf${NC}"
+            ((error_count++))
+        else
+            check_cf_config=$(grep -w "CF_Key" "/root/.acme.sh/account.conf")
+            if [ -z "${check_cf_config}" ]; then
+                printf "%s\n" "${RED}Loi: CloudFlare API chua duoc cau hinh. Vui long cau hinh truoc khi su dung.${NC}"
+                ((error_count++))
+            fi
+        fi
+    fi
+    
+    return $error_count
+}
+
+_setup_acme_account() {
+    # Check if this is the first time using acme.sh
+    if [ ! -f "/root/.acme.sh/account.conf" ]; then
+        printf "%s\n" "${YELLOW}Lan dau tien su dung acme.sh, can cau hinh tai khoan...${NC}"
+        read -r -p "Nhap email cua ban de dang ky tai khoan [admin@$(hostname)]: " user_email
+        if [ -z "${user_email}" ]; then
+            user_email="admin@$(hostname)"
+        fi
+        
+        # Try to register account
+        if [ "${ssl_type}" == "1" ]; then
+            # Let's Encrypt
+            /root/.acme.sh/acme.sh --register-account -m "${user_email}" --server letsencrypt
+        else
+            # ZeroSSL - need to register with email for ZeroSSL
+            /root/.acme.sh/acme.sh --register-account -m "${user_email}" --server zerossl
+        fi
+        
+        if [ $? -ne 0 ]; then
+            printf "%s\n" "${RED}Loi: Khong the dang ky tai khoan. Vui long kiem tra email va thu lai.${NC}"
+            return 1
+        fi
+    fi
+    
+    # For ZeroSSL, check if account is properly registered
+    if [ "${ssl_type}" == "2" ]; then
+        # Check if ZeroSSL account is registered with email
+        account_check=$(grep -i "zerossl" /root/.acme.sh/account.conf 2>/dev/null || echo "")
+        if [ -z "${account_check}" ]; then
+            printf "%s\n" "${YELLOW}Dang ky lai tai khoan ZeroSSL...${NC}"
+            read -r -p "Nhap email cua ban de dang ky ZeroSSL [admin@$(hostname)]: " user_email
+            if [ -z "${user_email}" ]; then
+                user_email="admin@$(hostname)"
+            fi
+            /root/.acme.sh/acme.sh --register-account -m "${user_email}" --server zerossl
+            if [ $? -ne 0 ]; then
+                printf "%s\n" "${RED}Loi: Khong the dang ky tai khoan ZeroSSL.${NC}"
+                return 1
+            fi
+        fi
+    fi
+    
+    return 0
+}
+
 _select_ssl_type(){
     echo "Lua chon loai SSL mien phi muon su dung"
     PS3="Nhap vao cau tra loi cua ban: "
@@ -104,48 +238,98 @@ _method_verify() {
 }
 
 _sign_ssl() {
+    # Clean up any broken SSL certificates first
+    _cleanup_broken_ssl
+    
     if [ -d "/root/.acme.sh/${domain}" ]; then
         rm -rf /root/.acme.sh/"${domain}"
     fi
+    
+    # Clean up any existing ECC certificates
+    if [ -d "/root/.acme.sh/${domain}_ecc" ]; then
+        rm -rf /root/.acme.sh/"${domain}_ecc"
+    fi
+    
     /root/.acme.sh/acme.sh --upgrade
     clear
 
+    # Issue certificate
+    ssl_command_result=1
     if [[ -n "${method}" && "${method}" == "cf_api" ]]; then
         if [ "${domain_type}" == "2" ]; then
             if [ "${ssl_type}" == "1" ]; then
                 /root/.acme.sh/acme.sh --issue --dns dns_cf -d "${domain}" --server letsencrypt --force
+                ssl_command_result=$?
             else
-                /root/.acme.sh/acme.sh --issue --dns dns_cf -d "${domain}" --force
+                /root/.acme.sh/acme.sh --issue --dns dns_cf -d "${domain}" --server zerossl --force
+                ssl_command_result=$?
             fi
         else
             if [ "${ssl_type}" == "1" ]; then
                 /root/.acme.sh/acme.sh --issue --dns dns_cf -d "${domain}" -d "www.${domain}" --server letsencrypt --force
+                ssl_command_result=$?
             else
-                /root/.acme.sh/acme.sh --issue --dns dns_cf -d "${domain}" -d "www.${domain}" --force
+                /root/.acme.sh/acme.sh --issue --dns dns_cf -d "${domain}" -d "www.${domain}" --server zerossl --force
+                ssl_command_result=$?
             fi
         fi
     elif [[ -n "${method}" && "${method}" == "cancel" ]]; then
         cancel="${RED}Huy thao tac.${NC}"
+        return 1
     else
         if [ "${domain_type}" == "2" ]; then
             if [ "${ssl_type}" == "1" ]; then
                 /root/.acme.sh/acme.sh --issue --nginx "${VHOST_DIR}"/"${domain}".conf -d "${domain}" --server letsencrypt --force
+                ssl_command_result=$?
             else
-                /root/.acme.sh/acme.sh --issue --nginx "${VHOST_DIR}"/"${domain}".conf -d "${domain}" --force
+                /root/.acme.sh/acme.sh --issue --nginx "${VHOST_DIR}"/"${domain}".conf -d "${domain}" --server zerossl --force
+                ssl_command_result=$?
             fi
         else
             if [ "${ssl_type}" == "1" ]; then
                 /root/.acme.sh/acme.sh --issue --nginx "${VHOST_DIR}"/"${domain}".conf -d "${domain}" -d "www.${domain}" --server letsencrypt --force
+                ssl_command_result=$?
             else
-                /root/.acme.sh/acme.sh --issue --nginx "${VHOST_DIR}"/"${domain}".conf -d "${domain}" -d "www.${domain}" --force
+                /root/.acme.sh/acme.sh --issue --nginx "${VHOST_DIR}"/"${domain}".conf -d "${domain}" -d "www.${domain}" --server zerossl --force
+                ssl_command_result=$?
             fi
         fi
+    fi
+
+    # Check if certificate issuance was successful
+    if [ $ssl_command_result -ne 0 ]; then
+        printf "%s\n" "${RED}Loi: Khong the tao chung chi SSL. Vui long kiem tra log va thu lai.${NC}"
+        return 1
+    fi
+
+    # Determine correct certificate path - handle both RSA and ECC certificates
+    cert_path="/root/.acme.sh/${domain}"
+    key_file="${domain}.key"
+    cert_file="${domain}.cer"
+    
+    # Check for ECC certificate first (ZeroSSL sometimes creates ECC)
+    if [ -d "/root/.acme.sh/${domain}_ecc" ]; then
+        cert_path="/root/.acme.sh/${domain}_ecc"
+    fi
+    
+    # Verify certificate files exist with proper extensions
+    if [[ ! -f "${cert_path}/${cert_file}" && ! -f "${cert_path}/fullchain.cer" ]]; then
+        printf "%s\n" "${RED}Loi: Khong tim thay file chung chi (.cer hoac fullchain.cer). Qua trinh tao SSL that bai.${NC}"
+        printf "%s\n" "${RED}Thu muc tim kiem: ${cert_path}${NC}"
+        return 1
+    fi
+    
+    if [[ ! -f "${cert_path}/${key_file}" ]]; then
+        printf "%s\n" "${RED}Loi: Khong tim thay file khoa rieng tu (.key). Qua trinh tao SSL that bai.${NC}"
+        printf "%s\n" "${RED}Thu muc tim kiem: ${cert_path}${NC}"
+        return 1
     fi
 
     if [ ! -d "${SSL_DIR}/${domain}" ]; then
         mkdir -p "${SSL_DIR}"/"${domain}"
     fi
 
+    # Remove old certificates
     if [ -f "${SSL_DIR}/${domain}/key.pem" ]; then
         rm -rf "${SSL_DIR}"/"${domain}"/key.pem
     fi
@@ -154,9 +338,52 @@ _sign_ssl() {
         rm -rf "${SSL_DIR}"/"${domain}"/cert.pem
     fi
 
-    /root/.acme.sh/acme.sh --install-cert -d "${domain}" \
-        --key-file "${SSL_DIR}"/"${domain}"/key.pem \
-        --fullchain-file "${SSL_DIR}"/"${domain}"/cert.pem
+    # Install certificate with proper error handling
+    install_result=1
+    
+    # Try installing with detected certificate files
+    if [ -f "${cert_path}/fullchain.cer" ]; then
+        /root/.acme.sh/acme.sh --install-cert -d "${domain}" \
+            --key-file "${SSL_DIR}"/"${domain}"/key.pem \
+            --fullchain-file "${SSL_DIR}"/"${domain}"/cert.pem \
+            --cert-file "${cert_path}/fullchain.cer" \
+            --key "${cert_path}/${key_file}"
+        install_result=$?
+    else
+        /root/.acme.sh/acme.sh --install-cert -d "${domain}" \
+            --key-file "${SSL_DIR}"/"${domain}"/key.pem \
+            --fullchain-file "${SSL_DIR}"/"${domain}"/cert.pem \
+            --cert-file "${cert_path}/${cert_file}" \
+            --key "${cert_path}/${key_file}"
+        install_result=$?
+    fi
+    
+    if [ $install_result -ne 0 ]; then
+        printf "%s\n" "${RED}Loi: Khong the cai dat chung chi SSL tu acme.sh.${NC}"
+        printf "%s\n" "${YELLOW}Thu cach khac: Copy truc tiep file chung chi...${NC}"
+        
+        # Fallback: copy files directly
+        if [ -f "${cert_path}/${key_file}" ]; then
+            cp "${cert_path}/${key_file}" "${SSL_DIR}/${domain}/key.pem"
+            chmod 600 "${SSL_DIR}/${domain}/key.pem"
+        fi
+        
+        if [ -f "${cert_path}/fullchain.cer" ]; then
+            cp "${cert_path}/fullchain.cer" "${SSL_DIR}/${domain}/cert.pem"
+        elif [ -f "${cert_path}/${cert_file}" ]; then
+            cp "${cert_path}/${cert_file}" "${SSL_DIR}/${domain}/cert.pem"
+        fi
+        
+        # Verify files were copied successfully
+        if [[ ! -f "${SSL_DIR}/${domain}/key.pem" || ! -f "${SSL_DIR}/${domain}/cert.pem" ]]; then
+            printf "%s\n" "${RED}Loi: Khong the copy chung chi SSL.${NC}"
+            return 1
+        fi
+        
+        printf "%s\n" "${GREEN}Copy chung chi thanh cong.${NC}"
+    fi
+
+    return 0
 }
 
 _edit_vhost() {
@@ -175,6 +402,19 @@ _edit_vhost() {
 _run() {
     _confirm_sign_ssl
     if [[ "${promt_sign_ssl}" =~ ^([yY])$ ]]; then
+        _check_prerequisites
+        if [ $? -ne 0 ]; then
+            printf "%s\n" "${RED}Khong the tiep tuc do loi cau hinh. Vui long sua cac loi tren truoc.${NC}"
+            return 1
+        fi
+
+        # Setup acme.sh account if needed
+        _setup_acme_account
+        if [ $? -ne 0 ]; then
+            printf "%s\n" "${RED}Khong the cau hinh tai khoan SSL. Huy thao tac.${NC}"
+            return 1
+        fi
+
         check_nginx_status
 
         if [ -z "${ALERT}" ]; then
@@ -191,12 +431,24 @@ _run() {
         fi
 
         if [ -z "${ALERT}" ]; then
+            # Show debug information
+            _debug_ssl_setup
+            
+            # Fix ZeroSSL account issues if needed
+            _fix_zerossl_account
+            if [ $? -ne 0 ]; then
+                printf "%s\n" "${RED}Khong the sua loi tai khoan ZeroSSL. Vui long thu lai.${NC}"
+                return 1
+            fi
+            
             _sign_ssl
+            ssl_result=$?
 
             if [ -n "${cancel}" ]; then
                 clear
                 printf "%s\n" "${cancel}"
-            else
+            elif [ $ssl_result -eq 0 ]; then
+                # Verify SSL files were created successfully
                 if [[ -f "${SSL_DIR}/${domain}/key.pem" && -f "${SSL_DIR}/${domain}/cert.pem" && -s "${SSL_DIR}/${domain}/key.pem" && -s "${SSL_DIR}/${domain}/cert.pem" ]]; then
                     _edit_vhost
                     sleep 2
@@ -205,19 +457,30 @@ _run() {
                         clear
                         echo
                         printf "%s\n" "${GREEN}Cau hinh SSL thanh cong.${NC}"
+                        printf "%s\n" "${GREEN}Domain: ${domain}${NC}"
+                        printf "%s\n" "${GREEN}SSL files: ${SSL_DIR}/${domain}/cert.pem${NC}"
                         echo
                     else
                         clear
                         nginx -t
-                        printf "%s\n" "${RED}${lang_error_vhost}${NC}"
-                        printf "%s\n" "${RED}${lang_use_rewrite_config}${NC}"
+                        printf "%s\n" "${RED}Loi cau hinh vhost. Vui long kiem tra cau hinh nginx.${NC}"
+                        printf "%s\n" "${RED}Ban co the su dung chuc nang rewrite config de sua chua.${NC}"
                         echo
                     fi
                 else
                     echo
-                    printf "%s\n" "${RED}Cau hinh SSL that bai.${NC}"
+                    printf "%s\n" "${RED}Cau hinh SSL that bai. File chung chi khong ton tai hoac bi loi.${NC}"
+                    printf "%s\n" "${RED}Vui long kiem tra log acme.sh: /root/.acme.sh/acme.sh.log${NC}"
                     echo
                 fi
+            else
+                echo
+                printf "%s\n" "${RED}Cau hinh SSL that bai.${NC}"
+                printf "%s\n" "${RED}Vui long kiem tra cau hinh domain va DNS records.${NC}"
+                printf "%s\n" "${RED}Log chi tiet: /root/.acme.sh/acme.sh.log${NC}"
+                echo
+                printf "%s\n" "${YELLOW}Hien thi thong tin debug:${NC}"
+                _show_ssl_debug_info
             fi
         else
             clear
@@ -231,6 +494,69 @@ _run() {
         printf "%s\n" "${RED}Ban da chon huy thao tac.${NC}"
         echo
     fi
+}
+
+_cleanup_broken_ssl() {
+    # Clean up broken SSL certificate directories
+    printf "%s\n" "${YELLOW}Kiem tra va don dep chung chi SSL bi loi...${NC}"
+    
+    # Check for broken certificate directories
+    broken_dirs=()
+    if [ -d "/root/.acme.sh/${domain}" ]; then
+        if [[ ! -f "/root/.acme.sh/${domain}/${domain}.key" || ! -f "/root/.acme.sh/${domain}/${domain}.cer" ]]; then
+            broken_dirs+=("/root/.acme.sh/${domain}")
+        fi
+    fi
+    
+    if [ -d "/root/.acme.sh/${domain}_ecc" ]; then
+        if [[ ! -f "/root/.acme.sh/${domain}_ecc/${domain}.key" || ! -f "/root/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
+            broken_dirs+=("/root/.acme.sh/${domain}_ecc")
+        fi
+    fi
+    
+    # Remove broken directories
+    for broken_dir in "${broken_dirs[@]}"; do
+        if [ -d "${broken_dir}" ]; then
+            printf "%s\n" "${YELLOW}Xoa thu muc chung chi bi loi: ${broken_dir}${NC}"
+            rm -rf "${broken_dir}"
+        fi
+    done
+    
+    # Also clean up any existing SSL files in nginx directory that might be corrupted
+    if [ -d "${SSL_DIR}/${domain}" ]; then
+        if [[ ! -s "${SSL_DIR}/${domain}/key.pem" || ! -s "${SSL_DIR}/${domain}/cert.pem" ]]; then
+            printf "%s\n" "${YELLOW}Xoa chung chi nginx bi loi: ${SSL_DIR}/${domain}${NC}"
+            rm -rf "${SSL_DIR}/${domain}"
+        fi
+    fi
+}
+
+_fix_zerossl_account() {
+    # Fix ZeroSSL account registration issue
+    if [ "${ssl_type}" == "2" ]; then
+        printf "%s\n" "${YELLOW}Kiem tra va sua loi tai khoan ZeroSSL...${NC}"
+        
+        # Check if ZeroSSL account needs registration
+        zerossl_error=$(grep -i "No EAB credentials found for ZeroSSL" /root/.acme.sh/acme.sh.log 2>/dev/null || echo "")
+        if [ -n "${zerossl_error}" ] || [ ! -f "/root/.acme.sh/account.conf" ]; then
+            printf "%s\n" "${YELLOW}Can dang ky tai khoan ZeroSSL voi email...${NC}"
+            read -r -p "Nhap email hop le de dang ky ZeroSSL [admin@$(hostname)]: " zerossl_email
+            if [ -z "${zerossl_email}" ]; then
+                zerossl_email="admin@$(hostname)"
+            fi
+            
+            # Register account with ZeroSSL
+            /root/.acme.sh/acme.sh --register-account -m "${zerossl_email}" --server zerossl
+            if [ $? -eq 0 ]; then
+                printf "%s\n" "${GREEN}Dang ky tai khoan ZeroSSL thanh cong.${NC}"
+                return 0
+            else
+                printf "%s\n" "${RED}Loi dang ky tai khoan ZeroSSL.${NC}"
+                return 1
+            fi
+        fi
+    fi
+    return 0
 }
 
 ALERT=""

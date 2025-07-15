@@ -210,6 +210,27 @@ ssl_remove(){
     . /var/hostvn/menu/controller/ssl/remove
 }
 
+# New SSL functions to sync with controllers
+ssl_create_le(){
+    . /var/hostvn/menu/controller/ssl/create_le_ssl
+}
+
+ssl_remove_le(){
+    . /var/hostvn/menu/controller/ssl/remove_le
+}
+
+ssl_le_alias(){
+    . /var/hostvn/menu/controller/ssl/le_alias_domain
+}
+
+ssl_cf_api(){
+    . /var/hostvn/menu/controller/ssl/cf_api
+}
+
+ssl_paid(){
+    . /var/hostvn/menu/controller/ssl/paid_ssl
+}
+
 php_setting(){
     . /var/hostvn/menu/controller/php/php_setting
 }

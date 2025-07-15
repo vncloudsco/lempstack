@@ -33,19 +33,19 @@ while [ "${CHOICE}" != "0" ]; do
     case ${CHOICE} in
     1)
         clear
-        bash "${BASH_DIR}"/menu/controller/ssl/create_le_ssl
+        ssl_create_le
         ;;
     2)
         clear
-        bash "${BASH_DIR}"/menu/controller/ssl/le_alias_domain
+        ssl_le_alias
         ;;
     3)
         clear
-        bash "${BASH_DIR}"/menu/controller/ssl/remove_le
+        ssl_remove_le
         ;;
     4)
         clear
-        bash "${BASH_DIR}"/menu/controller/ssl/cf_api
+        ssl_cf_api
         ;;
     0)
         clear

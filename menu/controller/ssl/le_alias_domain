@@ -65,10 +65,34 @@ _sign_ssl() {
     if [ -d "/root/.acme.sh/${domain}" ]; then
         rm -rf /root/.acme.sh/"${domain}"
     fi
+    
+    # Clean up any existing ECC certificates
+    if [ -d "/root/.acme.sh/${domain}_ecc" ]; then
+        rm -rf /root/.acme.sh/"${domain}_ecc"
+    fi
+    
     /root/.acme.sh/acme.sh --upgrade
     clear
 
+    # Issue certificate with error checking
     /root/.acme.sh/acme.sh --issue --nginx "${ALIAS_DIR}"/"${domain}".conf -d "${domain}" --server letsencrypt --force
+    ssl_command_result=$?
+    
+    if [ $ssl_command_result -ne 0 ]; then
+        printf "%s\n" "${RED}Loi: Khong the tao chung chi SSL cho alias domain ${domain}.${NC}"
+        return 1
+    fi
+
+    # Verify certificate files exist before installation
+    cert_path="/root/.acme.sh/${domain}"
+    if [ -d "/root/.acme.sh/${domain}_ecc" ]; then
+        cert_path="/root/.acme.sh/${domain}_ecc"
+    fi
+
+    if [[ ! -f "${cert_path}/${domain}.cer" || ! -f "${cert_path}/${domain}.key" ]]; then
+        printf "%s\n" "${RED}Loi: Khong tim thay file chung chi cho domain ${domain}.${NC}"
+        return 1
+    fi
 
     if [ ! -d "${SSL_DIR}/${domain}" ]; then
         mkdir -p "${SSL_DIR}"/"${domain}"
@@ -82,9 +106,18 @@ _sign_ssl() {
         rm -rf "${SSL_DIR}"/"${domain}"/cert.pem
     fi
 
+    # Install certificate with error checking
     /root/.acme.sh/acme.sh --install-cert -d "${domain}" \
         --key-file "${SSL_DIR}"/"${domain}"/key.pem \
         --fullchain-file "${SSL_DIR}"/"${domain}"/cert.pem
+    install_result=$?
+    
+    if [ $install_result -ne 0 ]; then
+        printf "%s\n" "${RED}Loi: Khong the cai dat chung chi SSL cho ${domain}.${NC}"
+        return 1
+    fi
+
+    return 0
 }
 
 _edit_vhost() {

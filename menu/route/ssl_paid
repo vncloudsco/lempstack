@@ -10,6 +10,11 @@
 #  Please do not copy under any circumstance for commercial reason!  #
 ######################################################################
 
+source /var/hostvn/menu/validate/rule
+source /var/hostvn/menu/helpers/function
+source /var/hostvn/menu/helpers/menu
+source /var/hostvn/menu/helpers/variable_common
+
 CHOICE=1
 
 printf "%s===================%s\n" "${GREEN}" "${NC}"
