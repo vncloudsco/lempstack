@@ -341,3 +341,47 @@ doc_root(){
         root="root /home/${2}/${3}/public_html;"
     fi
 }
+
+# SSL-specific functions
+
+check_nginx_status(){
+    if ! systemctl is-active --quiet nginx; then
+        ALERT="${RED}Nginx hien tai khong hoat dong. Vui long kiem tra lai.${NC}"
+    fi
+}
+
+check_a_record(){
+    local domain_to_check="$1"
+    if [ -n "${domain_to_check}" ]; then
+        domain_ip=$(dig +short "${domain_to_check}" @8.8.8.8)
+        server_ip=$(curl -s ipinfo.io/ip)
+        
+        if [ "${domain_ip}" != "${server_ip}" ]; then
+            ALERT="${RED}Domain ${domain_to_check} chua point ve IP cua server. Vui long kiem tra DNS record.${NC}"
+        fi
+    fi
+}
+
+restart_service(){
+    systemctl reload nginx
+    systemctl restart php-fpm
+}
+
+# Error handling variables for SSL
+lang_error_vhost="Cau hinh Nginx khong chinh xac. Vui long kiem tra lai"
+lang_use_rewrite_config="Vui long su dung chuc nang 'Tao lai cau hinh Nginx' trong menu Domain"
+
+# Compatible function for Ubuntu naming convention
+_select_domain(){
+    select_domain
+}
+
+# Compatible function for Ubuntu naming convention  
+_cd_dir(){
+    cd_dir "$1"
+}
+
+# Compatible function for Ubuntu naming convention
+_restart_service(){
+    restart_service
+}

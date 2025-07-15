@@ -36,3 +36,16 @@ DEFAULT_DIR_WEB="/usr/share/nginx/html"
 DEFAULT_DIR_TOOL="/usr/share/nginx/private"
 WORDPRESS_CRON_DIR="/var/hostvn/wpcron"
 RULE_FILE="${BASH_DIR}/validate/rule"
+
+# SSL Configuration Directory
+NGINX_CONF_DIR="/etc/nginx"
+SSL_DIR="${NGINX_CONF_DIR}/ssl"
+ALIAS_DIR="${NGINX_CONF_DIR}/alias"
+
+# Language and locale settings
+lang="vi"
+
+# Additional variables needed for SSL operations
+INPUT_SELECT="Nhap vao lua chon cua ban"
+LIST_DOMAIN="Danh sach tat ca cac ten mien tren VPS"
+EMPTY_DOMAIN="Ban chua them ten mien nao."

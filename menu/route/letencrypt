@@ -1,9 +1,9 @@
 #!/bin/bash
 
 ######################################################################
-#           Auto Install & Optimize LEMP Stack on CentOS 7, 8        #
+#           Auto Install & Optimize LEMP Stack on CentOS            #
 #                                                                    #
-#                Author: Sanvv - HOSTVN Technical                    #
+#                Author: HOSTVN Technical Team                       #
 #                  Website: https://hostvn.vn                        #
 #                                                                    #
 #              Please do not remove copyright. Thank!                #
@@ -13,30 +13,44 @@
 CHOICE=1
 
 printf "%s========================+%s\n" "${GREEN}" "${NC}"
-printf "%s  Quan ly Let's Encrypt  %s\n" "${GREEN}" "${NC}"
+printf "%s  Let's Encrypt Manager  %s\n" "${GREEN}" "${NC}"
 printf "%s========================+%s\n" "${GREEN}" "${NC}"
 
-while [ "${CHOICE}" != "0" ]
-do
-    printf "%s1. Them Let's Encrypt%s\n" "${GREEN}" "${NC}"
-    printf "%s2. Let's Encrypt Wildcard%s\n" "${GREEN}" "${NC}"
-    printf "%s3. Cau hinh Wildcard cho Subdomain%s\n" "${GREEN}" "${NC}"
-    printf "%s4. Kiem tra thoi han%s\n" "${GREEN}" "${NC}"
-    printf "%s5. Go bo Let's Encrypt%s\n" "${GREEN}" "${NC}"
+while [ "${CHOICE}" != "0" ]; do
+    printf "%s1. Cai dat Let's Encrypt SSL%s\n" "${GREEN}" "${NC}"
+    printf "%s2. SSL cho Alias domain%s\n" "${GREEN}" "${NC}"
+    printf "%s3. Go bo Let's Encrypt SSL%s\n" "${GREEN}" "${NC}"
+    printf "%s4. CloudFlare DNS API%s\n" "${GREEN}" "${NC}"
     printf "%s ========================%s\n" "${GREEN}" "${NC}"
     read -r -p " Nhap vao lua chon cua ban [0 = Thoat] " CHOICE
-    if [ -z "${CHOICE}" ]
-    then
+    if [ -z "${CHOICE}" ]; then
         CHOICE=1
         continue
     fi
     case ${CHOICE} in
-        1) clear; le_create ;;
-        2) clear; le_wildcard ;;
-        3) clear; le_wildcard_subdomain ;;
-        4) clear; le_check_expired ;;
-        5) clear; le_remove ;;
-        0) clear; menu_ssl ;;
-        *) clear; printf "%s\n" "${RED}Lua chon cua ban khong chinh xac. Vui long chon lai.${NC}";;
+    1)
+        clear
+        bash "${BASH_DIR}"/menu/controller/ssl/create_le_ssl
+        ;;
+    2)
+        clear
+        bash "${BASH_DIR}"/menu/controller/ssl/le_alias_domain
+        ;;
+    3)
+        clear
+        bash "${BASH_DIR}"/menu/controller/ssl/remove_le
+        ;;
+    4)
+        clear
+        bash "${BASH_DIR}"/menu/controller/ssl/cf_api
+        ;;
+    0)
+        clear
+        menu_ssl
+        ;;
+    *)
+        clear
+        printf "%s\n" "${RED}Lua chon cua ban khong chinh xac. Vui long chon lai.${NC}"
+        ;;
     esac
 done
